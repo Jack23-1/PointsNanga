@@ -26,16 +26,18 @@ const Header: React.FC = () => {
   return (
     <AntHeader
       style={{
-        padding: '0 24px',
+        padding: '0 16px',
         background: '#fff',
         borderBottom: '1px solid #f0f0f0',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginLeft: 250,
+        marginLeft: 0,
+        transition: 'margin-left 0.2s',
       }}
+      className="responsive-header"
     >
-      <div>
+      <div style={{ flex: 1 }}>
         <Text strong style={{ fontSize: 16 }}>
           Bienvenue, {user?.firstName} {user?.lastName}
         </Text>
@@ -43,7 +45,7 @@ const Header: React.FC = () => {
       <Dropdown menu={{ items: menuItems }} placement="bottomRight">
         <Space style={{ cursor: 'pointer' }}>
           <Avatar icon={<UserOutlined />} />
-          <Text>{user?.email}</Text>
+          <Text className="hide-on-mobile">{user?.email}</Text>
         </Space>
       </Dropdown>
     </AntHeader>

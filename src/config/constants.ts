@@ -3,6 +3,7 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/ap
 
 export const ROUTES = {
   LOGIN: '/login',
+  SUPER_ADMIN_LOGIN: '/admin/login',
   DASHBOARD: '/dashboard',
   SCHOOLS: '/schools',
   STUDENTS: '/students',

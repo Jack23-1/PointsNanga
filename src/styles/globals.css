@@ -68,3 +68,30 @@ code {
 .ant-layout-content {
   background: var(--bg-primary);
 }
+
+/* Responsive utilities */
+.hide-on-mobile {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none;
+  }
+  
+  .ant-layout-content {
+    margin: 16px 8px 0 !important;
+  }
+  
+  .ant-card {
+    margin-bottom: 16px;
+  }
+  
+  .ant-statistic-title {
+    font-size: 12px !important;
+  }
+  
+  .ant-statistic-content {
+    font-size: 20px !important;
+  }
+}

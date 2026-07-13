@@ -3,67 +3,58 @@ import { useNavigate } from "react-router-dom";
 import { ROUTES } from "../../../config/constants";
 import logo from "../../../assets/logo.png";
 
-// Interfaces pour le typage strict des props ou des états si nécessaire
 interface LoginResponseData {
-  matricule: string;
+  email: string;
   rememberMe: boolean;
   timestamp: string;
   status: "success" | "simulated";
 }
 
-export default function Login() {
+export default function SuperAdminLogin() {
   const navigate = useNavigate();
-  // const { login } = useAuth(); // TODO: Enable when API is ready
   
-  // États locaux typés pour le formulaire
-  const [matricule, setMatricule] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [rememberMe, setRememberMe] = useState<boolean>(false);
 
-  // États UI pour une expérience utilisateur premium (Feedback visuel)
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
-  // Soumission du formulaire avec gestion asynchrone simulée (SaaS pattern)
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!matricule || !password) return;
+    if (!email || !password) return;
 
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      // Simulation d'une latence réseau réseau premium (800ms)
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       const payload: LoginResponseData = {
-        matricule: matricule.trim(),
+        email: email.trim(),
         rememberMe,
         timestamp: new Date().toISOString(),
         status: "success",
       };
 
-      console.log("[SaaS Auth Simulation Submitting...]", payload);
+      console.log("[Super Admin Auth Simulation]", payload);
       
       // Simulate token storage for testing
       localStorage.setItem('auth_token', 'simulated_token_' + Date.now());
       localStorage.setItem('user', JSON.stringify({
-        id: '1',
-        email: matricule,
-        firstName: 'Jean',
-        lastName: 'Mukendi',
-        role: 'student',
-        schoolId: 'school_1',
-        classId: 'class_1',
+        id: 'admin_1',
+        email: email,
+        firstName: 'Admin',
+        lastName: 'Système',
+        role: 'super_admin',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }));
       
       setIsSuccess(true);
       
-      // Redirect after success
       setTimeout(() => {
         navigate(ROUTES.DASHBOARD);
       }, 1500);
@@ -76,23 +67,19 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen w-full bg-[#f8fafc] flex flex-col justify-center items-center p-4 overflow-hidden antialiased selection:bg-blue-600/10 selection:text-blue-600 font-sans">
-      {/* Grille de fond technologique subtile et cercles de dégradés flous (Style Apple/Stripe) */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
-        <div className="absolute top-[-30%] left-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-br from-blue-100/40 to-indigo-100/20 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:8s]" />
-        <div className="absolute bottom-[-30%] right-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-tr from-slate-200/40 to-blue-50/50 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:12s]" />
+        <div className="absolute top-[-30%] left-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-br from-purple-100/40 to-indigo-100/20 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:8s]" />
+        <div className="absolute bottom-[-30%] right-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-tr from-slate-200/40 to-purple-50/50 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:12s]" />
       </div>
 
-      {/* Conteneur principal de la carte de connexion avec gestion du cycle de vie UI */}
       <div className="relative z-10 w-full max-w-[420px]">
-        {/* Effet lumineux de bordure supérieure (Premium SaaS Touch) */}
-        <div className="absolute -top-[1px] left-10 right-10 h-[2px] bg-gradient-to-r from-transparent via-blue-500/30 to-transparent blur-[1px]" />
+        <div className="absolute -top-[1px] left-10 right-10 h-[2px] bg-gradient-to-r from-transparent via-purple-500/30 to-transparent blur-[1px]" />
 
         <div className="w-full bg-white border border-slate-200/70 rounded-[2.5rem] shadow-[0_24px_60px_-15px_rgba(15,23,42,0.08)] p-8 sm:p-10 transition-all duration-500 hover:shadow-[0_32px_72px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm">
-          {/* Zone Logo avec micro-interactions */}
           <div className="flex justify-center mb-8">
             <div className="relative group cursor-pointer">
-              <div className="absolute inset-0 bg-blue-500/10 rounded-[1.5rem] blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute inset-0 bg-purple-500/10 rounded-[1.5rem] blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative w-[90px] h-[90px] bg-gradient-to-b from-slate-50 to-slate-100/50 border border-slate-200/80 rounded-[1.5rem] flex items-center justify-center shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-300 group-hover:scale-[1.02] group-hover:border-slate-300">
                 <img
                   src={logo}
@@ -103,17 +90,15 @@ export default function Login() {
             </div>
           </div>
 
-          {/* En-tête Textuel */}
           <div className="text-center mb-9">
             <h1 className="text-[26px] font-bold text-slate-900 tracking-tight leading-tight mb-2.5">
-              Résultats Élèves
+              Super Admin
             </h1>
             <p className="text-sm text-slate-500 font-medium max-w-[280px] mx-auto leading-relaxed">
-              Consultez vos résultats scolaires en ligne
+              Connexion administrateur système
             </p>
           </div>
 
-          {/* Gestion de l'affichage d'état de succès */}
           {isSuccess ? (
             <div className="py-8 text-center space-y-4 animate-fade-in">
               <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500 border border-emerald-100">
@@ -136,23 +121,12 @@ export default function Login() {
                   Authentification réussie
                 </p>
                 <p className="text-xs text-slate-500">
-                  Redirection vers votre tableau de bord...
+                  Redirection vers le tableau de bord...
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setIsSuccess(false);
-                  setPassword("");
-                }}
-                className="text-xs text-blue-600 hover:underline font-medium pt-2 block mx-auto"
-              >
-                Retourner à l'accueil
-              </button>
             </div>
           ) : (
-            /* Formulaire Authentique */
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Notification d'erreur éventuelle */}
               {errorMsg && (
                 <div className="p-3.5 bg-rose-50/80 border border-rose-100 rounded-xl text-xs font-medium text-rose-600 flex items-start space-x-2.5 animate-shake">
                   <svg
@@ -172,28 +146,27 @@ export default function Login() {
                 </div>
               )}
 
-              {/* Champ Matricule */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-0.5">
                   <label
-                    htmlFor="matricule"
+                    htmlFor="email"
                     className="block text-xs font-bold text-slate-700 tracking-wider uppercase"
                   >
-                    Matricule élève
+                    Email
                   </label>
                 </div>
                 <div className="relative group">
                   <input
-                    id="matricule"
-                    type="text"
+                    id="email"
+                    type="email"
                     required
                     disabled={isLoading}
-                    value={matricule}
-                    onChange={(e) => setMatricule(e.target.value)}
-                    placeholder="Ex: ELV20260001"
-                    className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@pointsnanga.com"
+                    className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-focus-within:text-blue-500 transition-colors duration-200">
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-focus-within:text-purple-500 transition-colors duration-200">
                     <svg
                       className="w-4 h-4"
                       fill="none"
@@ -204,14 +177,13 @@ export default function Login() {
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
                       />
                     </svg>
                   </div>
                 </div>
               </div>
 
-              {/* Champ Mot de passe avec toggle visuel */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-0.5">
                   <label
@@ -230,7 +202,7 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Votre mot de passe"
-                    className="w-full h-12 pl-4 pr-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full h-12 pl-4 pr-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
@@ -282,7 +254,6 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Options secondaires de formulaire */}
               <div className="flex items-center justify-between pt-0.5 text-xs">
                 <label className="flex items-center space-x-2.5 text-slate-600 cursor-pointer select-none font-medium group">
                   <input
@@ -290,7 +261,7 @@ export default function Login() {
                     disabled={isLoading}
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500/10 focus:ring-offset-0 transition duration-150 ease-in-out cursor-pointer disabled:cursor-not-allowed"
+                    className="w-4 h-4 rounded-md border-slate-300 text-purple-600 focus:ring-purple-500/10 focus:ring-offset-0 transition duration-150 ease-in-out cursor-pointer disabled:cursor-not-allowed"
                   />
                   <span className="group-hover:text-slate-800 transition-colors duration-150">
                     Se souvenir de moi
@@ -298,22 +269,20 @@ export default function Login() {
                 </label>
                 <a
                   href="#forgot-password"
-                  className="text-blue-600 hover:text-blue-700 font-semibold transition-colors duration-150 focus:outline-none focus:underline"
+                  className="text-purple-600 hover:text-purple-700 font-semibold transition-colors duration-150 focus:outline-none focus:underline"
                 >
                   Mot de passe oublié ?
                 </a>
               </div>
 
-              {/* Bouton d'action principal */}
               <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="relative w-full h-12 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white text-sm font-semibold rounded-xl shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none flex items-center justify-center"
+                  className="relative w-full h-12 bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white text-sm font-semibold rounded-xl shadow-[0_4px_12px_rgba(147,51,234,0.2)] hover:shadow-[0_6px_20px_rgba(147,51,234,0.3)] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none flex items-center justify-center"
                 >
                   {isLoading ? (
                     <div className="flex items-center space-x-2">
-                      {/* Loader SVG haut de gamme */}
                       <svg
                         className="animate-spin h-4 w-4 text-white"
                         fill="none"
@@ -333,7 +302,7 @@ export default function Login() {
                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                         />
                       </svg>
-                      <span className="tracking-wide">Vérification...</span>
+                      <span className="tracking-wide">Connexion...</span>
                     </div>
                   ) : (
                     <span>Se connecter</span>
@@ -343,10 +312,9 @@ export default function Login() {
             </form>
           )}
 
-          {/* Séparateur et pied de page institutionnel */}
           <div className="mt-10 pt-6 border-t border-slate-100 text-center space-y-1.5">
             <p className="text-[11px] font-semibold text-slate-400 tracking-wide uppercase">
-              Plateforme de publication des résultats scolaires
+              PointsNanga - Administration Système
             </p>
             <p className="text-[10px] font-medium text-slate-400/70">
               &copy; 2026 Tous droits réservés
