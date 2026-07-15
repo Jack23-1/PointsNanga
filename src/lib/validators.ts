@@ -15,12 +15,7 @@ export const validateRequired = (value: unknown): boolean => {
   return value !== null && value !== undefined;
 };
 
-const matriculePattern = /^[A-Za-z0-9-]{3,32}$/;
-
-/**
- * Client-side allow-list validation for the student login flow.
- * This improves user feedback but does not replace server-side validation.
- */
+/** Validation minimale du formulaire élève : aucun plafond de caractères côté interface. */
 export const getStudentLoginValidationError = ({
   schoolName,
   className,
@@ -36,12 +31,12 @@ export const getStudentLoginValidationError = ({
     return "Sélectionnez une école et une classe valides.";
   }
 
-  if (!matriculePattern.test(matricule.trim())) {
-    return "Le matricule doit contenir de 3 à 32 caractères : lettres, chiffres ou tirets.";
+  if (!matricule.trim()) {
+    return "Saisissez votre matricule.";
   }
 
-  if (password.length < 8 || password.length > 128) {
-    return "Le mot de passe doit comporter entre 8 et 128 caractères.";
+  if (!password) {
+    return "Saisissez votre mot de passe.";
   }
 
   return null;

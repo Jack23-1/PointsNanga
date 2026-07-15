@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   BankOutlined,
   BookOutlined,
-  CheckCircleOutlined,
   CheckOutlined,
   DownOutlined,
   EyeInvisibleOutlined,
@@ -17,6 +16,7 @@ import { getStudentLoginValidationError } from "../../../lib/validators";
 import logo from "../../../assets/logo.png";
 import studentBackground from "../../../assets/student-login-background.jpg";
 import mobileStudentsBackground from "../../../assets/eleves.png";
+import LogoLoader from "../../../components/common/LogoLoader";
 
 interface LoginResponseData {
   schoolName: string;
@@ -39,8 +39,8 @@ export default function Login() {
   const [password, setPassword] = useState<string>("");
   const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isSchoolMenuOpen, setIsSchoolMenuOpen] = useState(false);
   const [isClassMenuOpen, setIsClassMenuOpen] = useState(false);
@@ -86,6 +86,7 @@ export default function Login() {
     }
 
     setIsLoading(true);
+    setIsPageTransitioning(true);
     setErrorMsg(null);
 
     try {
@@ -116,9 +117,8 @@ export default function Login() {
       };
       updateUser(userData);
 
-      setIsSuccess(true);
-      setTimeout(() => navigate(ROUTES.DASHBOARD), 1500);
     } catch {
+      setIsPageTransitioning(false);
       setErrorMsg("Une erreur de connexion est survenue. Veuillez réessayer.");
     } finally {
       setIsLoading(false);
@@ -126,7 +126,7 @@ export default function Login() {
   };
 
   return (
-    <main className="premium-login">
+    <main className={`premium-login${isPageTransitioning ? " premium-login--loading" : ""}`}>
       <div
         aria-hidden="true"
         className="premium-login__background"
@@ -150,30 +150,7 @@ export default function Login() {
           </h1>
         </header>
 
-        {isSuccess ? (
-          <div
-            className="premium-login__success"
-            role="status"
-            aria-live="polite"
-          >
-            <span className="premium-login__success-icon">
-              <CheckCircleOutlined />
-            </span>
-            <h2>Connexion réussie</h2>
-            <p>Redirection vers votre tableau de bord…</p>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSuccess(false);
-                setPassword("");
-              }}
-              className="premium-login__secondary-button"
-            >
-              Retour au formulaire
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="premium-login__form">
+        <form onSubmit={handleSubmit} className="premium-login__form">
             {errorMsg && (
               <div className="premium-login__alert" role="alert">
                 <span aria-hidden="true">!</span>
@@ -288,7 +265,6 @@ export default function Login() {
                   disabled={isLoading}
                     value={matricule}
                     ref={matriculeInputRef}
-                    maxLength={32}
                     autoComplete="username"
                     autoCapitalize="characters"
                     spellCheck={false}
@@ -326,8 +302,6 @@ export default function Login() {
                   disabled={isLoading}
                     value={password}
                     ref={passwordInputRef}
-                  minLength={8}
-                  maxLength={128}
                   autoComplete="current-password"
                   onChange={(e) => setPassword(e.target.value)}
                   onFocus={() => setMobileFocusField("password")}
@@ -379,13 +353,20 @@ export default function Login() {
             </button>
             </div>}
             </div>
-          </form>
-        )}
+        </form>
 
         <footer className="premium-login__footer">
           Plateforme sécurisée de publication des résultats scolaires
         </footer>
       </section>
+      {isPageTransitioning && (
+        <LogoLoader
+          onComplete={() => navigate(ROUTES.DASHBOARD)}
+          duration={2000}
+          transparent
+          label="Connexion..."
+        />
+      )}
     </main>
   );
 }

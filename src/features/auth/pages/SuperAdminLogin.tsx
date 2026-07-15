@@ -1,7 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  CheckCircleOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   LockOutlined,
@@ -13,6 +12,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import logo from "../../../assets/logo.png";
 import studentBackground from "../../../assets/student-login-background.jpg";
 import mobileBackground from "../../../assets/eleves.png";
+import LogoLoader from "../../../components/common/LogoLoader";
 
 interface LoginResponseData {
   email: string;
@@ -28,8 +28,8 @@ export default function SuperAdminLogin() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isSuccess, setIsSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -37,6 +37,7 @@ export default function SuperAdminLogin() {
     if (!email || !password) return;
 
     setIsLoading(true);
+    setIsPageTransitioning(true);
     setErrorMsg(null);
 
     try {
@@ -55,9 +56,8 @@ export default function SuperAdminLogin() {
         updatedAt: new Date().toISOString(),
       });
 
-      setIsSuccess(true);
-      setTimeout(() => navigate(ROUTES.DASHBOARD), 1500);
     } catch {
+      setIsPageTransitioning(false);
       setErrorMsg("Une erreur de connexion est survenue. Veuillez réessayer.");
     } finally {
       setIsLoading(false);
@@ -65,7 +65,7 @@ export default function SuperAdminLogin() {
   };
 
   return (
-    <main className="premium-login premium-login--admin">
+    <main className={`premium-login premium-login--admin${isPageTransitioning ? " premium-login--loading" : ""}`}>
       <div aria-hidden="true" className="premium-login__background" style={{ backgroundImage: `url(${studentBackground})` }} />
       <div aria-hidden="true" className="premium-login__mobile-students" style={{ backgroundImage: `url(${mobileBackground})` }} />
       <div className="premium-login__overlay" aria-hidden="true" />
@@ -78,14 +78,7 @@ export default function SuperAdminLogin() {
           <h1 id="admin-login-title" className="sr-only">Connexion Super Admin</h1>
         </header>
 
-        {isSuccess ? (
-          <div className="premium-login__success" role="status" aria-live="polite">
-            <span className="premium-login__success-icon"><CheckCircleOutlined /></span>
-            <h2>Connexion réussie</h2>
-            <p>Redirection vers le tableau de bord…</p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="premium-login__form">
+        <form onSubmit={handleSubmit} className="premium-login__form">
             {errorMsg && <div className="premium-login__alert" role="alert"><span aria-hidden="true">!</span><p>{errorMsg}</p></div>}
             <div className="premium-login__field">
               <label htmlFor="email">E-mail administrateur <span aria-hidden="true">*</span></label>
@@ -111,10 +104,17 @@ export default function SuperAdminLogin() {
             <button type="submit" disabled={isLoading} className="premium-login__submit">
               {isLoading ? <><span className="premium-login__spinner" /> Vérification…</> : "Se connecter"}
             </button>
-          </form>
-        )}
+        </form>
         <footer className="premium-login__footer">Espace réservé aux administrateurs autorisés</footer>
       </section>
+      {isPageTransitioning && (
+        <LogoLoader
+          onComplete={() => navigate(ROUTES.DASHBOARD)}
+          duration={2000}
+          transparent
+          label="Connexion..."
+        />
+      )}
     </main>
   );
 }

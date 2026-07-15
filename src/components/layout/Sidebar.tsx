@@ -15,6 +15,8 @@ import {
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
 import { ROUTES } from "../../config/constants";
+import LogoLoader from "../common/LogoLoader";
+import brandLogo from "../../assets/logosbg.png";
 
 const { Sider } = Layout;
 
@@ -23,10 +25,16 @@ const Sidebar: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
+
+  const handleNavigation = (route: string) => {
+    if (`${location.pathname}${location.search}` === route) return;
+    setPendingRoute(route);
+  };
 
   const handleLogout = () => {
     logout();
-    navigate(ROUTES.LOGIN);
+    handleNavigation(ROUTES.LOGIN);
   };
 
   const getMenuItems = () => {
@@ -39,13 +47,13 @@ const Sidebar: React.FC = () => {
             key: "add-student",
             icon: <PlusCircleOutlined />,
             label: "Ajouter un élève",
-            onClick: () => navigate(ROUTES.STUDENTS),
+            onClick: () => handleNavigation(ROUTES.STUDENTS),
           },
           {
             key: "manage-students",
             icon: <TeamOutlined />,
             label: "Gestion des élèves",
-            onClick: () => navigate(`${ROUTES.STUDENTS}?view=manage`),
+            onClick: () => handleNavigation(`${ROUTES.STUDENTS}?view=manage`),
           },
         ]
       : [
@@ -53,7 +61,7 @@ const Sidebar: React.FC = () => {
             key: ROUTES.DASHBOARD,
             icon: <DashboardOutlined />,
             label: "Tableau de bord",
-            onClick: () => navigate(ROUTES.DASHBOARD),
+            onClick: () => handleNavigation(ROUTES.DASHBOARD),
           },
         ];
 
@@ -63,19 +71,7 @@ const Sidebar: React.FC = () => {
           key: ROUTES.SCHOOLS,
           icon: <BankOutlined />,
           label: "Écoles",
-          onClick: () => navigate(ROUTES.SCHOOLS),
-        },
-        {
-          key: "add-school",
-          icon: <PlusCircleOutlined />,
-          label: "Ajouter une école",
-          onClick: () => navigate(`${ROUTES.SCHOOLS}?create=1`),
-        },
-        {
-          key: "settings",
-          icon: <SettingOutlined />,
-          label: "Paramètres",
-          onClick: () => navigate(ROUTES.SETTINGS),
+          onClick: () => handleNavigation(ROUTES.SCHOOLS),
         },
       );
     }
@@ -86,19 +82,19 @@ const Sidebar: React.FC = () => {
           key: "students",
           icon: <UserOutlined />,
           label: "Élèves",
-          onClick: () => navigate(ROUTES.STUDENTS),
+          onClick: () => handleNavigation(ROUTES.STUDENTS),
         },
         {
           key: "results",
           icon: <FileTextOutlined />,
           label: "Résultats",
-          onClick: () => navigate(ROUTES.RESULTS),
+          onClick: () => handleNavigation(ROUTES.RESULTS),
         },
         {
           key: "director-settings",
           icon: <SettingOutlined />,
           label: "Paramètres",
-          onClick: () => navigate(ROUTES.SETTINGS),
+          onClick: () => handleNavigation(ROUTES.SETTINGS),
         },
       );
     }
@@ -109,13 +105,13 @@ const Sidebar: React.FC = () => {
           key: "grades",
           icon: <BookOutlined />,
           label: "Notes",
-          onClick: () => navigate(ROUTES.GRADES),
+          onClick: () => handleNavigation(ROUTES.GRADES),
         },
         {
           key: "teacher-results",
           icon: <FileTextOutlined />,
           label: "Résultats",
-          onClick: () => navigate(ROUTES.RESULTS),
+          onClick: () => handleNavigation(ROUTES.RESULTS),
         },
       );
     }
@@ -126,13 +122,13 @@ const Sidebar: React.FC = () => {
           key: "student-results",
           icon: <FileTextOutlined />,
           label: "Résultats",
-          onClick: () => navigate(ROUTES.RESULTS),
+          onClick: () => handleNavigation(ROUTES.RESULTS),
         },
         {
           key: "bulletins",
           icon: <FileTextOutlined />,
           label: "Bulletins",
-          onClick: () => navigate(ROUTES.BULLETINS),
+          onClick: () => handleNavigation(ROUTES.BULLETINS),
         },
       );
     }
@@ -150,6 +146,14 @@ const Sidebar: React.FC = () => {
 
   return (
     <>
+      {pendingRoute && (
+        <LogoLoader
+          onComplete={() => {
+            navigate(pendingRoute);
+            setPendingRoute(null);
+          }}
+        />
+      )}
       <Sider
         width={250}
         collapsible
@@ -163,25 +167,8 @@ const Sidebar: React.FC = () => {
         }}
         theme="light"
       >
-        <div
-          style={{
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderBottom: "1px solid #f0f0f0",
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              color: "#1890ff",
-              fontWeight: "bold",
-              fontSize: collapsed ? "16px" : "20px",
-            }}
-          >
-            {collapsed ? "PN" : "PointsNanga"}
-          </h2>
+        <div className="sidebar-brand">
+          <img src={brandLogo} alt="Points Nanga" />
         </div>
         <Menu
           mode="inline"
@@ -190,9 +177,7 @@ const Sidebar: React.FC = () => {
               ? location.search === "?view=manage"
                 ? "manage-students"
                 : "add-student"
-              : location.search === "?create=1"
-                ? "add-school"
-                : location.pathname,
+              : location.pathname,
           ]}
           items={getMenuItems()}
           style={{ borderRight: 0 }}
