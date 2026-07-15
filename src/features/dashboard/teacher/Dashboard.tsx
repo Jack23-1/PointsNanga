@@ -1,60 +1,115 @@
-import { Card, Row, Col, Statistic, Typography, Table, Button, Space, Tag, Alert } from 'antd';
-import { 
-  BookOutlined, 
-  CheckCircleOutlined, 
+import {
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Typography,
+  Table,
+  Button,
+  Space,
+  Tag,
+  Alert,
+} from "antd";
+import {
+  BookOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   EditOutlined,
-  SendOutlined 
-} from '@ant-design/icons';
+  SendOutlined,
+} from "@ant-design/icons";
 
 const { Title, Text } = Typography;
 
 const TeacherDashboard = () => {
   const columns = [
     {
-      title: 'Matière',
-      dataIndex: 'subject',
-      key: 'subject',
+      title: "Matière",
+      dataIndex: "subject",
+      key: "subject",
     },
     {
-      title: 'Classe',
-      dataIndex: 'class',
-      key: 'class',
+      title: "Classe",
+      dataIndex: "class",
+      key: "class",
     },
     {
-      title: 'Élèves Notés',
-      dataIndex: 'graded',
-      key: 'graded',
+      title: "Élèves Notés",
+      dataIndex: "graded",
+      key: "graded",
       render: (graded: number, record: any) => (
-        <Text>{graded} / {record.total}</Text>
+        <Text>
+          {graded} / {record.total}
+        </Text>
       ),
     },
     {
-      title: 'Statut',
-      dataIndex: 'status',
-      key: 'status',
+      title: "Statut",
+      dataIndex: "status",
+      key: "status",
       render: (status: string) => (
-        <Tag color={status === 'completed' ? 'green' : status === 'in_progress' ? 'blue' : 'orange'}>
-          {status === 'completed' ? 'Terminé' : status === 'in_progress' ? 'En cours' : 'Non commencé'}
+        <Tag
+          color={
+            status === "completed"
+              ? "green"
+              : status === "in_progress"
+                ? "blue"
+                : "orange"
+          }
+        >
+          {status === "completed"
+            ? "Terminé"
+            : status === "in_progress"
+              ? "En cours"
+              : "Non commencé"}
         </Tag>
       ),
     },
     {
-      title: 'Actions',
-      key: 'actions',
+      title: "Actions",
+      key: "actions",
       render: () => (
         <Space>
-          <Button type="link" icon={<EditOutlined />}>Encoder</Button>
+          <Button type="link" icon={<EditOutlined />}>
+            Encoder
+          </Button>
         </Space>
       ),
     },
   ];
 
   const subjectData = [
-    { key: '1', subject: 'Mathématiques', class: '6ème A', graded: 45, total: 45, status: 'completed' },
-    { key: '2', subject: 'Mathématiques', class: '6ème B', graded: 38, total: 42, status: 'in_progress' },
-    { key: '3', subject: 'Physique', class: '5ème A', graded: 0, total: 38, status: 'not_started' },
-    { key: '4', subject: 'Physique', class: '5ème B', graded: 0, total: 40, status: 'not_started' },
+    {
+      key: "1",
+      subject: "Mathématiques",
+      class: "6ème A",
+      graded: 45,
+      total: 45,
+      status: "completed",
+    },
+    {
+      key: "2",
+      subject: "Mathématiques",
+      class: "6ème B",
+      graded: 38,
+      total: 42,
+      status: "in_progress",
+    },
+    {
+      key: "3",
+      subject: "Physique",
+      class: "5ème A",
+      graded: 0,
+      total: 38,
+      status: "not_started",
+    },
+    {
+      key: "4",
+      subject: "Physique",
+      class: "5ème B",
+      graded: 0,
+      total: 40,
+      status: "not_started",
+    },
   ];
 
   return (
@@ -77,7 +132,7 @@ const TeacherDashboard = () => {
               title="Classes Assignées"
               value={4}
               prefix={<BookOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: "#1890ff" }}
             />
           </Card>
         </Col>
@@ -87,7 +142,7 @@ const TeacherDashboard = () => {
               title="Notes Encodées"
               value={83}
               prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ color: "#52c41a" }}
             />
           </Card>
         </Col>
@@ -97,14 +152,14 @@ const TeacherDashboard = () => {
               title="En Attente"
               value={82}
               prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#faad14' }}
+              valueStyle={{ color: "#faad14" }}
             />
           </Card>
         </Col>
       </Row>
 
-      <Card 
-        title="Mes Classes" 
+      <Card
+        title="Mes Classes"
         style={{ marginTop: 24 }}
         extra={
           <Button type="primary" icon={<SendOutlined />}>
@@ -112,10 +167,11 @@ const TeacherDashboard = () => {
           </Button>
         }
       >
-        <Table 
-          columns={columns} 
-          dataSource={subjectData} 
+        <Table
+          columns={columns}
+          dataSource={subjectData}
           pagination={false}
+          scroll={{ x: "max-content" }}
         />
       </Card>
     </div>

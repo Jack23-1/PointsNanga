@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Layout } from 'antd';
-import Sidebar from './Sidebar';
-import Header from './Header';
+import React from "react";
+import { Layout } from "antd";
+import Sidebar from "./Sidebar";
+import Header from "./Header";
 
 const { Content } = Layout;
 
@@ -10,36 +10,13 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
-  const [sidebarWidth, setSidebarWidth] = useState(250);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        setSidebarWidth(0);
-      } else {
-        setSidebarWidth(250);
-      }
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: "100vh" }} className="main-layout">
       <Sidebar />
-      <Layout style={{ marginLeft: sidebarWidth, transition: 'margin-left 0.2s' }}>
+      <Layout>
         <Header />
-        <Content style={{ margin: '24px 16px 0', overflow: 'initial' }}>
-          <div
-            style={{
-              padding: 24,
-              minHeight: 360,
-              background: '#fff',
-              borderRadius: 8,
-            }}
-          >
+        <Content className="main-layout-content">
+          <div className="main-layout-content__inner">
             {children}
           </div>
         </Content>

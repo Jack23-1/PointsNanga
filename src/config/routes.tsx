@@ -7,10 +7,10 @@ import SuperAdminDashboard from '../features/dashboard/super-admin/Dashboard';
 import DirectorDashboard from '../features/dashboard/director/Dashboard';
 import TeacherDashboard from '../features/dashboard/teacher/Dashboard';
 import StudentDashboard from '../features/dashboard/student/Dashboard';
+import SchoolsPage from '../features/schools/pages/SchoolsPage';
+import StudentsPage from '../features/students/pages/StudentsPage';
 
 // Placeholder pages - will be replaced with actual feature pages
-const SchoolsPage = () => <div>Schools</div>;
-const StudentsPage = () => <div>Students</div>;
 const GradesPage = () => <div>Grades</div>;
 const ResultsPage = () => <div>Results</div>;
 const BulletinsPage = () => <div>Bulletins</div>;
@@ -33,11 +33,23 @@ const DashboardPage = () => {
   }
 };
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles?: string[];
+}) => {
   const token = localStorage.getItem('auth_token');
   if (!token) {
     return <Navigate to={ROUTES.LOGIN} replace />;
   }
+
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to={ROUTES.DASHBOARD} replace />;
+  }
+
   return <MainLayout>{children}</MainLayout>;
 };
 
@@ -65,7 +77,7 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.SCHOOLS,
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute allowedRoles={['super_admin']}>
         <SchoolsPage />
       </ProtectedRoute>
     ),

@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Button } from 'antd';
-import { MenuOutlined } from '@ant-design/icons';
+import React, { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Layout, Menu, Button } from "antd";
+import { MenuOutlined } from "@ant-design/icons";
 import {
   DashboardOutlined,
   BankOutlined,
   UserOutlined,
   BookOutlined,
   FileTextOutlined,
+  PlusCircleOutlined,
+  TeamOutlined,
   SettingOutlined,
   LogoutOutlined,
-} from '@ant-design/icons';
-import { useAuth } from '../../hooks/useAuth';
-import { ROUTES } from '../../config/constants';
+} from "@ant-design/icons";
+import { useAuth } from "../../hooks/useAuth";
+import { ROUTES } from "../../config/constants";
 
 const { Sider } = Layout;
 
@@ -28,93 +30,117 @@ const Sidebar: React.FC = () => {
   };
 
   const getMenuItems = () => {
-    const items: any[] = [
-      {
-        key: ROUTES.DASHBOARD,
-        icon: <DashboardOutlined />,
-        label: 'Tableau de bord',
-        onClick: () => navigate(ROUTES.DASHBOARD),
-      },
-    ];
+    const isStudentManagementArea = location.pathname === ROUTES.STUDENTS;
+    const isSchoolManagementArea = location.pathname === ROUTES.SCHOOLS;
+    const isAdministrationArea = isStudentManagementArea || isSchoolManagementArea;
+    const items: any[] = isStudentManagementArea
+      ? [
+          {
+            key: "add-student",
+            icon: <PlusCircleOutlined />,
+            label: "Ajouter un élève",
+            onClick: () => navigate(ROUTES.STUDENTS),
+          },
+          {
+            key: "manage-students",
+            icon: <TeamOutlined />,
+            label: "Gestion des élèves",
+            onClick: () => navigate(`${ROUTES.STUDENTS}?view=manage`),
+          },
+        ]
+      : [
+          {
+            key: ROUTES.DASHBOARD,
+            icon: <DashboardOutlined />,
+            label: "Tableau de bord",
+            onClick: () => navigate(ROUTES.DASHBOARD),
+          },
+        ];
 
-    if (user?.role === 'super_admin') {
+    if ((user?.role === "super_admin" || isSchoolManagementArea) && !isStudentManagementArea) {
       items.push(
         {
-          key: 'schools',
+          key: ROUTES.SCHOOLS,
           icon: <BankOutlined />,
-          label: 'Écoles',
+          label: "Écoles",
           onClick: () => navigate(ROUTES.SCHOOLS),
         },
         {
-          key: 'settings',
+          key: "add-school",
+          icon: <PlusCircleOutlined />,
+          label: "Ajouter une école",
+          onClick: () => navigate(`${ROUTES.SCHOOLS}?create=1`),
+        },
+        {
+          key: "settings",
           icon: <SettingOutlined />,
-          label: 'Paramètres',
+          label: "Paramètres",
           onClick: () => navigate(ROUTES.SETTINGS),
-        }
+        },
       );
     }
 
-    if (user?.role === 'director') {
+    if (user?.role === "director" && !isAdministrationArea) {
       items.push(
         {
-          key: 'students',
+          key: "students",
           icon: <UserOutlined />,
-          label: 'Élèves',
+          label: "Élèves",
           onClick: () => navigate(ROUTES.STUDENTS),
         },
         {
-          key: 'results',
+          key: "results",
           icon: <FileTextOutlined />,
-          label: 'Résultats',
+          label: "Résultats",
           onClick: () => navigate(ROUTES.RESULTS),
         },
         {
-          key: 'director-settings',
+          key: "director-settings",
           icon: <SettingOutlined />,
-          label: 'Paramètres',
+          label: "Paramètres",
           onClick: () => navigate(ROUTES.SETTINGS),
-        }
+        },
       );
     }
 
-    if (user?.role === 'teacher') {
+    if (user?.role === "teacher" && !isAdministrationArea) {
       items.push(
         {
-          key: 'grades',
+          key: "grades",
           icon: <BookOutlined />,
-          label: 'Notes',
+          label: "Notes",
           onClick: () => navigate(ROUTES.GRADES),
         },
         {
-          key: 'teacher-results',
+          key: "teacher-results",
           icon: <FileTextOutlined />,
-          label: 'Résultats',
+          label: "Résultats",
           onClick: () => navigate(ROUTES.RESULTS),
-        }
+        },
       );
     }
 
-    if (user?.role === 'student') {
+    if (user?.role === "student" && !isAdministrationArea) {
       items.push(
         {
-          key: 'student-results',
+          key: "student-results",
           icon: <FileTextOutlined />,
-          label: 'Résultats',
+          label: "Résultats",
           onClick: () => navigate(ROUTES.RESULTS),
         },
         {
-          key: 'bulletins',
+          key: "bulletins",
           icon: <FileTextOutlined />,
-          label: 'Bulletins',
+          label: "Bulletins",
           onClick: () => navigate(ROUTES.BULLETINS),
-        }
+        },
       );
     }
 
     items.push({
-      key: 'logout',
+      key: "logout",
       icon: <LogoutOutlined />,
-      label: 'Déconnexion',
+      label: "Déconnexion",
       onClick: handleLogout,
       danger: true,
     });
@@ -125,30 +151,49 @@ const Sidebar: React.FC = () => {
   return (
     <>
       <Sider
+        width={250}
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         breakpoint="lg"
         collapsedWidth={0}
         style={{
-          overflow: 'auto',
-          height: '100vh',
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          zIndex: 1000,
+          overflow: "auto",
+          minHeight: "100vh",
         }}
         theme="light"
       >
-        <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid #f0f0f0' }}>
-          <h2 style={{ margin: 0, color: '#1890ff', fontWeight: 'bold', fontSize: collapsed ? '16px' : '20px' }}>
-            {collapsed ? 'PN' : 'PointsNanga'}
+        <div
+          style={{
+            height: 64,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderBottom: "1px solid #f0f0f0",
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              color: "#1890ff",
+              fontWeight: "bold",
+              fontSize: collapsed ? "16px" : "20px",
+            }}
+          >
+            {collapsed ? "PN" : "PointsNanga"}
           </h2>
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[
+            location.pathname === ROUTES.STUDENTS
+              ? location.search === "?view=manage"
+                ? "manage-students"
+                : "add-student"
+              : location.search === "?create=1"
+                ? "add-school"
+                : location.pathname,
+          ]}
           items={getMenuItems()}
           style={{ borderRight: 0 }}
         />
@@ -157,13 +202,13 @@ const Sidebar: React.FC = () => {
         type="text"
         icon={<MenuOutlined />}
         onClick={() => setCollapsed(!collapsed)}
+        className="sidebar-toggle-btn"
         style={{
-          position: 'fixed',
-          left: collapsed ? 16 : 266,
+          position: "fixed",
+          left: 16,
           top: 16,
           zIndex: 1001,
-          display: collapsed ? 'block' : 'none',
-          transition: 'left 0.2s',
+          transition: "left 0.2s",
         }}
       />
     </>

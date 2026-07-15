@@ -66,21 +66,21 @@ export default function SuperAdminLogin() {
   };
 
   return (
-    <div className="relative min-h-screen w-full bg-[#f8fafc] flex flex-col justify-center items-center p-4 overflow-hidden antialiased selection:bg-blue-600/10 selection:text-blue-600 font-sans">
+    <div className="relative min-h-[100dvh] w-full bg-[#f8fafc] flex flex-col justify-center items-center px-4 py-8 sm:p-8 lg:px-12 lg:py-12 overflow-hidden antialiased selection:bg-blue-600/10 selection:text-blue-600 font-sans">
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
         <div className="absolute top-[-30%] left-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-br from-purple-100/40 to-indigo-100/20 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:8s]" />
         <div className="absolute bottom-[-30%] right-[-20%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-tr from-slate-200/40 to-purple-50/50 blur-[140px] mix-blend-multiply animate-pulse [animation-duration:12s]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-[420px]">
+      <div className="relative z-10 w-full max-w-[420px] lg:max-w-[460px]">
         <div className="absolute -top-[1px] left-10 right-10 h-[2px] bg-gradient-to-r from-transparent via-purple-500/30 to-transparent blur-[1px]" />
 
-        <div className="w-full bg-white border border-slate-200/70 rounded-[2.5rem] shadow-[0_24px_60px_-15px_rgba(15,23,42,0.08)] p-8 sm:p-10 transition-all duration-500 hover:shadow-[0_32px_72px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+        <div className="w-full bg-white border border-slate-200/70 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_24px_60px_-15px_rgba(15,23,42,0.08)] p-6 sm:p-10 lg:p-12 transition-all duration-500 hover:shadow-[0_32px_72px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm">
           <div className="flex justify-center mb-8">
             <div className="relative group cursor-pointer">
               <div className="absolute inset-0 bg-purple-500/10 rounded-[1.5rem] blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative w-[90px] h-[90px] bg-gradient-to-b from-slate-50 to-slate-100/50 border border-slate-200/80 rounded-[1.5rem] flex items-center justify-center shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-300 group-hover:scale-[1.02] group-hover:border-slate-300">
+              <div className="auth-logo relative w-[90px] h-[90px] bg-gradient-to-b from-slate-50 to-slate-100/50 border border-slate-200/80 rounded-[1.5rem] flex items-center justify-center shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-300 group-hover:scale-[1.02] group-hover:border-slate-300">
                 <img
                   src={logo}
                   className="w-full h-full object-cover p-2"
@@ -126,7 +126,7 @@ export default function SuperAdminLogin() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="auth-form space-y-6">
               {errorMsg && (
                 <div className="p-3.5 bg-rose-50/80 border border-rose-100 rounded-xl text-xs font-medium text-rose-600 flex items-start space-x-2.5 animate-shake">
                   <svg
@@ -146,7 +146,7 @@ export default function SuperAdminLogin() {
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="auth-field space-y-2">
                 <div className="flex justify-between items-center px-0.5">
                   <label
                     htmlFor="email"
@@ -164,9 +164,9 @@ export default function SuperAdminLogin() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="admin@pointsnanga.com"
-                    className="w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="auth-input w-full h-12 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-focus-within:text-purple-500 transition-colors duration-200">
+                  <div className="auth-field-icon absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-focus-within:text-purple-500 transition-colors duration-200">
                     <svg
                       className="w-4 h-4"
                       fill="none"
@@ -184,7 +184,7 @@ export default function SuperAdminLogin() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="auth-field space-y-2">
                 <div className="flex justify-between items-center px-0.5">
                   <label
                     htmlFor="password"
@@ -202,14 +202,14 @@ export default function SuperAdminLogin() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Votre mot de passe"
-                    className="w-full h-12 pl-4 pr-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="auth-input w-full h-12 pl-4 pr-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 text-sm font-medium transition-all duration-200 focus:bg-white focus:border-purple-500 focus:ring-4 focus:ring-purple-500/5 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
                     tabIndex={-1}
                     disabled={isLoading}
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors duration-150 p-1 rounded-md"
+                    className="auth-field-icon absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors duration-150 p-1 rounded-md"
                     title={
                       showPassword
                         ? "Masquer le mot de passe"
