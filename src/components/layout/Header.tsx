@@ -1,7 +1,7 @@
-import React from 'react';
-import { Layout, Dropdown, Avatar, Space, Typography } from 'antd';
-import { UserOutlined, LogoutOutlined } from '@ant-design/icons';
-import { useAuth } from '../../hooks/useAuth';
+import React from "react";
+import { Layout, Dropdown, Avatar, Space, Typography } from "antd";
+import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
+import { useAuth } from "../../hooks/useAuth";
 
 const { Header: AntHeader } = Layout;
 const { Text } = Typography;
@@ -11,14 +11,14 @@ const Header: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    window.location.href = '/login';
+    window.location.href = "/login";
   };
 
   const menuItems = [
     {
-      key: 'logout',
+      key: "logout",
       icon: <LogoutOutlined />,
-      label: 'Déconnexion',
+      label: "Déconnexion",
       onClick: handleLogout,
     },
   ];
@@ -26,24 +26,19 @@ const Header: React.FC = () => {
   return (
     <AntHeader
       style={{
-        padding: '0 16px',
-        background: '#fff',
-        borderBottom: '1px solid #f0f0f0',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        padding: "0 16px",
+        background: "#fff",
+        borderBottom: "1px solid #f0f0f0",
+        display: "flex",
+        justifyContent: "flex-end",
+        alignItems: "center",
         marginLeft: 0,
-        transition: 'margin-left 0.2s',
+        transition: "margin-left 0.2s",
       }}
       className="responsive-header"
     >
-      <div style={{ flex: 1 }}>
-        <Text strong style={{ fontSize: 16 }}>
-          Bienvenue, {user?.firstName} {user?.lastName}
-        </Text>
-      </div>
       <Dropdown menu={{ items: menuItems }} placement="bottomRight">
-        <Space style={{ cursor: 'pointer' }}>
+        <Space style={{ cursor: "pointer" }}>
           <Avatar icon={<UserOutlined />} />
           <Text className="hide-on-mobile">{user?.email}</Text>
         </Space>

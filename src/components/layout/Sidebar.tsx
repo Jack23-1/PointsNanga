@@ -40,7 +40,8 @@ const Sidebar: React.FC = () => {
   const getMenuItems = () => {
     const isStudentManagementArea = location.pathname === ROUTES.STUDENTS;
     const isSchoolManagementArea = location.pathname === ROUTES.SCHOOLS;
-    const isAdministrationArea = isStudentManagementArea || isSchoolManagementArea;
+    const isAdministrationArea =
+      isStudentManagementArea || isSchoolManagementArea;
     const items: any[] = isStudentManagementArea
       ? [
           {
@@ -65,15 +66,25 @@ const Sidebar: React.FC = () => {
           },
         ];
 
-    if ((user?.role === "super_admin" || isSchoolManagementArea) && !isStudentManagementArea) {
-      items.push(
-        {
-          key: ROUTES.SCHOOLS,
-          icon: <BankOutlined />,
-          label: "Écoles",
-          onClick: () => handleNavigation(ROUTES.SCHOOLS),
-        },
-      );
+    if (
+      (user?.role === "super_admin" || isSchoolManagementArea) &&
+      !isStudentManagementArea
+    ) {
+      items.push({
+        key: ROUTES.SCHOOLS,
+        icon: <BankOutlined />,
+        label: "Écoles",
+        onClick: () => handleNavigation(ROUTES.SCHOOLS),
+      });
+    }
+
+    if (user?.role === "super_admin" && !isAdministrationArea) {
+      items.push({
+        key: "super-admin-grades",
+        icon: <BookOutlined />,
+        label: "Gestion de cotes",
+        onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
+      });
     }
 
     if (user?.role === "director" && !isAdministrationArea) {
@@ -177,7 +188,10 @@ const Sidebar: React.FC = () => {
               ? location.search === "?view=manage"
                 ? "manage-students"
                 : "add-student"
-              : location.pathname,
+              : location.pathname === ROUTES.DASHBOARD &&
+                  location.search === "?workspace=grades"
+                ? "super-admin-grades"
+                : location.pathname,
           ]}
           items={getMenuItems()}
           style={{ borderRight: 0 }}
