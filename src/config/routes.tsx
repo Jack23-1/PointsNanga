@@ -1,32 +1,33 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { ROUTES } from './constants';
-import Login from '../features/auth/pages/Login';
-import SuperAdminLogin from '../features/auth/pages/SuperAdminLogin';
-import MainLayout from '../components/layout/MainLayout';
-import SuperAdminDashboard from '../features/dashboard/super-admin/Dashboard';
-import DirectorDashboard from '../features/dashboard/director/Dashboard';
-import TeacherDashboard from '../features/dashboard/teacher/Dashboard';
-import StudentDashboard from '../features/dashboard/student/Dashboard';
-import SchoolsPage from '../features/schools/pages/SchoolsPage';
-import StudentsPage from '../features/students/pages/StudentsPage';
+import { createBrowserRouter, Navigate } from "react-router-dom";
+import { ROUTES } from "./constants";
+import Login from "../features/auth/pages/Login";
+import SuperAdminLogin from "../features/auth/pages/SuperAdminLogin";
+import DirectorLogin from "../features/auth/pages/DirectorLogin";
+import MainLayout from "../components/layout/MainLayout";
+import SuperAdminDashboard from "../features/dashboard/super-admin/Dashboard";
+import DirectorDashboard from "../features/dashboard/director/Dashboard";
+import TeacherDashboard from "../features/dashboard/teacher/Dashboard";
+import StudentDashboard from "../features/dashboard/student/Dashboard";
+import SchoolsPage from "../features/schools/pages/SchoolsPage";
+import GradesPage from "../features/grades/pages/GradesPage";
+import StudentsPage from "../features/students/pages/StudentsPage";
 
 // Placeholder pages - will be replaced with actual feature pages
-const GradesPage = () => <div>Grades</div>;
 const ResultsPage = () => <div>Results</div>;
 const BulletinsPage = () => <div>Bulletins</div>;
 const SettingsPage = () => <div>Settings</div>;
 
 const DashboardPage = () => {
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
   switch (user.role) {
-    case 'super_admin':
+    case "super_admin":
       return <SuperAdminDashboard />;
-    case 'director':
+    case "director":
       return <DirectorDashboard />;
-    case 'teacher':
+    case "teacher":
       return <TeacherDashboard />;
-    case 'student':
+    case "student":
       return <StudentDashboard />;
     default:
       return <div>Dashboard</div>;
@@ -40,12 +41,12 @@ const ProtectedRoute = ({
   children: React.ReactNode;
   allowedRoles?: string[];
 }) => {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem("auth_token");
   if (!token) {
     return <Navigate to={ROUTES.LOGIN} replace />;
   }
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
@@ -63,7 +64,11 @@ export const router = createBrowserRouter([
     element: <SuperAdminLogin />,
   },
   {
-    path: '/',
+    path: ROUTES.DIRECTOR_LOGIN,
+    element: <DirectorLogin />,
+  },
+  {
+    path: "/",
     element: <Navigate to={ROUTES.DASHBOARD} replace />,
   },
   {
@@ -77,7 +82,7 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.SCHOOLS,
     element: (
-      <ProtectedRoute allowedRoles={['super_admin']}>
+      <ProtectedRoute allowedRoles={["super_admin"]}>
         <SchoolsPage />
       </ProtectedRoute>
     ),

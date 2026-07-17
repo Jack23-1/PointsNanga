@@ -10,7 +10,6 @@ import {
 import { ROUTES } from "../../../config/constants";
 import { useAuth } from "../../../hooks/useAuth";
 import logo from "../../../assets/logo.png";
-import studentBackground from "../../../assets/student-login-background.jpg";
 import mobileBackground from "../../../assets/eleves.png";
 import LogoLoader from "../../../components/common/LogoLoader";
 
@@ -66,7 +65,7 @@ export default function SuperAdminLogin() {
 
   return (
     <main className={`premium-login premium-login--admin${isPageTransitioning ? " premium-login--loading" : ""}`}>
-      <div aria-hidden="true" className="premium-login__background" style={{ backgroundImage: `url(${studentBackground})` }} />
+      <div aria-hidden="true" className="premium-login__background" style={{ backgroundImage: `url(${mobileBackground})` }} />
       <div aria-hidden="true" className="premium-login__mobile-students" style={{ backgroundImage: `url(${mobileBackground})` }} />
       <div className="premium-login__overlay" aria-hidden="true" />
 

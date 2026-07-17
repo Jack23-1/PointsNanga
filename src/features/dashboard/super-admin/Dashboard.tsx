@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Avatar,
-  Badge,
   Button,
   Card,
+  Checkbox,
   Col,
   Empty,
   Input,
@@ -22,12 +22,12 @@ import {
   BankOutlined,
   BellOutlined,
   BookOutlined,
+  CalendarOutlined,
   CheckCircleFilled,
   DownloadOutlined,
   EllipsisOutlined,
   ExportOutlined,
   FileTextOutlined,
-  FundOutlined,
   PlusOutlined,
   RiseOutlined,
   SafetyCertificateOutlined,
@@ -40,6 +40,9 @@ import {
 } from "@ant-design/icons";
 import { ROUTES } from "../../../config/constants";
 import { useLocation, useNavigate } from "react-router-dom";
+import educationPartnerAd from "../../../assets/education-partner-ad.png";
+import studentsPhoto from "../../../assets/eleves.jpeg";
+import classroomPhoto from "../../../assets/student-login-background.jpg";
 
 type Workspace =
   | "Aperçu"
@@ -74,6 +77,17 @@ type AcademicRecord = {
   average: number;
   rank: number;
   status: "Réussi" | "À suivre";
+};
+
+type GradeManagementRecord = {
+  key: string;
+  matricule: string;
+  lastName: string;
+  postName: string;
+  firstName: string;
+  school: string;
+  className: string;
+  isValidated: boolean;
 };
 
 const { Title, Text } = Typography;
@@ -188,6 +202,93 @@ const academicRecords: AcademicRecord[] = [
   },
 ];
 
+const gradeManagementRecords: GradeManagementRecord[] = [
+  {
+    key: "1",
+    matricule: "ELV-2026-0042",
+    lastName: "Mukendi",
+    postName: "Kanku",
+    firstName: "Naomi",
+    school: "Lycée Saint-Michel",
+    className: "6e A",
+    isValidated: true,
+  },
+  {
+    key: "2",
+    matricule: "ELV-2026-0198",
+    lastName: "Kabasele",
+    postName: "Tshibangu",
+    firstName: "David",
+    school: "Collège Notre-Dame",
+    className: "5e B",
+    isValidated: true,
+  },
+  {
+    key: "3",
+    matricule: "ELV-2026-0315",
+    lastName: "Nsimba",
+    postName: "Lukusa",
+    firstName: "Esther",
+    school: "Institut Technique Matadi",
+    className: "3e TS",
+    isValidated: false,
+  },
+  {
+    key: "4",
+    matricule: "ELV-2026-0066",
+    lastName: "Nzambe",
+    postName: "Mbuyi",
+    firstName: "Moïse",
+    school: "Complexe Scolaire Lumière",
+    className: "4e A",
+    isValidated: true,
+  },
+  {
+    key: "5",
+    matricule: "ELV-2026-0051",
+    lastName: "Ilunga",
+    postName: "Kalala",
+    firstName: "Grâce",
+    school: "Lycée Saint-Michel",
+    className: "6e B",
+    isValidated: false,
+  },
+  {
+    key: "6",
+    matricule: "ELV-2026-0216",
+    lastName: "Mbuyi",
+    postName: "Kabongo",
+    firstName: "Junior",
+    school: "Collège Notre-Dame",
+    className: "5e A",
+    isValidated: true,
+  },
+];
+
+const gradePeriods = [
+  "1ère",
+  "2ème",
+  "1er Semestre",
+  "3ème",
+  "4ème",
+  "2ème semestre",
+];
+
+const gradeAdvertisementSlides = [
+  {
+    image: educationPartnerAd,
+    alt: "Élèves découvrant des outils numériques en classe",
+  },
+  {
+    image: studentsPhoto,
+    alt: "Élèves réunis dans leur établissement scolaire",
+  },
+  {
+    image: classroomPhoto,
+    alt: "Salle de classe d'un établissement partenaire",
+  },
+];
+
 const users = [
   {
     key: "1",
@@ -232,6 +333,23 @@ const SuperAdminDashboard = () => {
   const [schoolQuery, setSchoolQuery] = useState("");
   const [province, setProvince] = useState<string | undefined>();
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [gradeSearch, setGradeSearch] = useState("");
+  const [gradeSchoolFilter, setGradeSchoolFilter] = useState<
+    string | undefined
+  >();
+  const [gradeClassFilter, setGradeClassFilter] = useState<
+    string | undefined
+  >();
+  const [gradePeriodFilter, setGradePeriodFilter] = useState<
+    string | undefined
+  >();
+  const [gradeValidationStatus, setGradeValidationStatus] = useState<
+    Record<string, boolean>
+  >(() =>
+    Object.fromEntries(
+      gradeManagementRecords.map((record) => [record.key, record.isValidated]),
+    ),
+  );
 
   useEffect(() => {
     setWorkspace(
@@ -254,6 +372,39 @@ const SuperAdminDashboard = () => {
       }),
     [province, schoolQuery],
   );
+
+  const availableGradeClasses = useMemo(() => {
+    if (!gradeSchoolFilter) return [];
+
+    return Array.from(
+      new Set(
+        gradeManagementRecords
+          .filter((record) => record.school === gradeSchoolFilter)
+          .map((record) => record.className),
+      ),
+    ).sort();
+  }, [gradeSchoolFilter]);
+
+  const filteredGradeManagementRecords = useMemo(() => {
+    const normalizedSearch = gradeSearch.trim().toLocaleLowerCase();
+
+    return gradeManagementRecords.filter((record) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          record.matricule,
+          record.lastName,
+          record.postName,
+          record.firstName,
+        ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch));
+
+      return (
+        matchesSearch &&
+        (!gradeSchoolFilter || record.school === gradeSchoolFilter) &&
+        (!gradeClassFilter || record.className === gradeClassFilter)
+      );
+    });
+  }, [gradeClassFilter, gradeSchoolFilter, gradeSearch]);
 
   const schoolColumns: ColumnsType<School> = [
     {
@@ -370,22 +521,65 @@ const SuperAdminDashboard = () => {
     },
   ];
 
+  const gradeManagementColumns: ColumnsType<GradeManagementRecord> = [
+    {
+      title: "Matricule",
+      dataIndex: "matricule",
+      fixed: "left",
+      width: 160,
+      sorter: (a, b) => a.matricule.localeCompare(b.matricule),
+      render: (value: string) => <strong>{value}</strong>,
+    },
+    {
+      title: "Nom",
+      dataIndex: "lastName",
+      width: 135,
+      sorter: (a, b) => a.lastName.localeCompare(b.lastName),
+    },
+    {
+      title: "Post-nom",
+      dataIndex: "postName",
+      width: 145,
+    },
+    {
+      title: "Prénom",
+      dataIndex: "firstName",
+      width: 135,
+    },
+    {
+      title: "École",
+      dataIndex: "school",
+      width: 210,
+    },
+    {
+      title: "Classe",
+      dataIndex: "className",
+      width: 110,
+      align: "center",
+    },
+    {
+      title: "Statut",
+      key: "status",
+      width: 100,
+      align: "center",
+      render: (_, record) => (
+        <Checkbox
+          checked={gradeValidationStatus[record.key]}
+          className="super-admin-dashboard__grade-status-checkbox"
+          aria-label={`Valider le statut de ${record.firstName} ${record.lastName}`}
+          onChange={(event) =>
+            setGradeValidationStatus((currentStatus) => ({
+              ...currentStatus,
+              [record.key]: event.target.checked,
+            }))
+          }
+        />
+      ),
+    },
+  ];
+
   const renderOverview = () => (
     <>
-      <section className="super-admin-dashboard__hero super-admin-dashboard__hero--command">
-        <div className="super-admin-dashboard__hero-copy">
-          <Title level={1}>Bonjour, Administrateur</Title>
-        </div>
-        <div className="super-admin-dashboard__hero-actions">
-          <Button
-            className="super-admin-dashboard__report-button"
-            icon={<DownloadOutlined />}
-          >
-            Rapport
-          </Button>
-        </div>
-      </section>
-
       <Row gutter={[18, 18]} className="super-admin-dashboard__metrics">
         <Metric
           icon={<BankOutlined />}
@@ -476,46 +670,30 @@ const SuperAdminDashboard = () => {
                   d="M91 75c45 17 79 31 115 21 35-10 61 12 97 21 29 7 42 23 48 40"
                 />
               </svg>
-              <button
-                type="button"
+              <div
                 className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kinshasa"
-                onClick={() => setWorkspace("Écoles")}
               >
                 <span /> <strong>Kinshasa</strong>
                 <small>1 école</small>
-              </button>
-              <button
-                type="button"
+              </div>
+              <div
                 className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kongo"
-                onClick={() => setWorkspace("Écoles")}
               >
                 <span /> <strong>Kongo-Central</strong>
                 <small>1 école</small>
-              </button>
-              <button
-                type="button"
+              </div>
+              <div
                 className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--katanga"
-                onClick={() => setWorkspace("Écoles")}
               >
                 <span /> <strong>Haut-Katanga</strong>
                 <small>1 école</small>
-              </button>
-              <button
-                type="button"
+              </div>
+              <div
                 className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kivu"
-                onClick={() => setWorkspace("Écoles")}
               >
                 <span /> <strong>Nord-Kivu</strong>
                 <small>1 école</small>
-              </button>
-            </div>
-            <div className="super-admin-dashboard__map-footer">
-              <span>
-                <i /> Active
-              </span>
-              <Button type="link" onClick={() => setWorkspace("Écoles")}>
-                Voir les écoles
-              </Button>
+              </div>
             </div>
           </Card>
         </Col>
@@ -542,43 +720,16 @@ const SuperAdminDashboard = () => {
           </Card>
         </Col>
         <Col xs={24} xl={9}>
-          <Card
-            className="super-admin-dashboard__card"
-            title={
-              <Space>
-                Centre de notifications <Badge count={4} size="small" />
-              </Space>
-            }
-            extra={
-              <BellOutlined className="super-admin-dashboard__title-icon" />
-            }
-          >
-            <div className="super-admin-dashboard__notifications">
-              <Notification
-                icon={<BankOutlined />}
-                color="blue"
-                title="Nouvelle école enregistrée"
-                description="Complexe Scolaire Lumière · il y a 12 min"
-              />
-              <Notification
-                icon={<CheckCircleFilled />}
-                color="green"
-                title="Résultats publiés"
-                description="1 248 nouveaux bulletins disponibles · il y a 48 min"
-              />
-              <Notification
-                icon={<WarningFilled />}
-                color="orange"
-                title="École à vérifier"
-                description="Institut Technique Matadi est suspendu · il y a 2 h"
-              />
-              <Notification
-                icon={<FundOutlined />}
-                color="violet"
-                title="Paiement reçu"
-                description="Abonnement annuel confirmé · aujourd’hui"
-              />
-            </div>
+          <Card className="super-admin-dashboard__card super-admin-dashboard__ad-card">
+            <aside className="super-admin-dashboard__ad-slot" aria-label="Emplacement publicitaire">
+              <img src={educationPartnerAd} alt="Élèves découvrant des outils numériques en classe" />
+              <span className="super-admin-dashboard__ad-label">Publicité</span>
+              <div className="super-admin-dashboard__ad-content">
+                <strong>Apprendre autrement</strong>
+                <p>Des outils numériques pour chaque classe.</p>
+                <span>Découvrir le partenaire →</span>
+              </div>
+            </aside>
           </Card>
         </Col>
       </Row>
@@ -736,60 +887,127 @@ const SuperAdminDashboard = () => {
       </div>
       <Row
         gutter={[18, 18]}
-        className="super-admin-dashboard__academic-counters"
+        className="super-admin-dashboard__academic-counters super-admin-dashboard__grade-highlights"
       >
-        <Metric
-          icon={<BookOutlined />}
-          label="Cotes encodées"
-          value={38450}
-          trend="Cette période"
-          tone="blue"
-          compact
-        />
-        <Metric
-          icon={<CheckCircleFilled />}
-          label="Cotes validées"
-          value={37218}
-          trend="96,8 % du total"
-          tone="green"
-          compact
-        />
-        <Metric
-          icon={<WarningFilled />}
-          label="Cotes à vérifier"
-          value={1232}
-          trend="Avant publication"
-          tone="orange"
-          compact
-        />
+        <Col xs={24} sm={12} lg={8} xl={8}>
+          <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--blue super-admin-dashboard__grade-students-card">
+            <span className="super-admin-dashboard__metric-icon">
+              <TeamOutlined />
+            </span>
+            <Statistic
+              title="Total élèves"
+              value={schools.reduce((total, school) => total + school.students, 0)}
+              formatter={(value) => Number(value).toLocaleString("fr-FR")}
+            />
+            <small>
+              <RiseOutlined /> Toutes les écoles actives
+            </small>
+          </Card>
+        </Col>
+
+        <Col xs={24} sm={12} lg={8} xl={8}>
+          <Card
+            bordered={false}
+            className="super-admin-dashboard__card super-admin-dashboard__grade-ad-card"
+          >
+            <aside
+              className="super-admin-dashboard__grade-ad-carousel"
+              aria-label="Espace publicitaire"
+            >
+              {gradeAdvertisementSlides.map((slide, index) => (
+                <img
+                  key={slide.image}
+                  src={slide.image}
+                  alt={slide.alt}
+                  className="super-admin-dashboard__grade-ad-slide"
+                  style={{ animationDelay: `${index * 4}s` }}
+                />
+              ))}
+            </aside>
+          </Card>
+        </Col>
+
+        <Col xs={24} sm={12} lg={8} xl={8}>
+          <Card className="super-admin-dashboard__metric super-admin-dashboard__grade-readiness-card">
+            <div className="super-admin-dashboard__grade-readiness-ring" aria-hidden="true">
+              <strong>97%</strong>
+            </div>
+            <div className="super-admin-dashboard__grade-readiness-copy">
+              <span>Publication</span>
+              <strong>Prête à valider</strong>
+              <Text>37 218 cotes contrôlées</Text>
+              <small><CheckCircleFilled /> Contrôle national conforme</small>
+            </div>
+          </Card>
+        </Col>
       </Row>
       <Card className="super-admin-dashboard__card">
-        <div className="super-admin-dashboard__table-tools">
+        <div className="super-admin-dashboard__table-tools super-admin-dashboard__grade-table-tools">
           <Input.Search
-            placeholder="Élève, matricule, enseignant..."
+            placeholder="Matricule, nom ou prénom..."
             allowClear
+            value={gradeSearch}
+            onChange={(event) => setGradeSearch(event.target.value)}
           />
           <Select
+            className="super-admin-dashboard__grade-filter"
+            classNames={{
+              popup: { root: "super-admin-dashboard__grade-filter-popup" },
+            }}
             placeholder="École"
             allowClear
-            options={schools.map((school) => ({
-              label: school.name,
-              value: school.name,
+            showSearch
+            optionFilterProp="label"
+            prefix={<BankOutlined />}
+            style={{ width: 240 }}
+            value={gradeSchoolFilter}
+            onChange={(value) => {
+              setGradeSchoolFilter(value);
+              setGradeClassFilter(undefined);
+            }}
+            options={schools.map((school) => ({ label: school.name, value: school.name }))}
+          />
+          <Select
+            className="super-admin-dashboard__grade-filter"
+            classNames={{
+              popup: { root: "super-admin-dashboard__grade-filter-popup" },
+            }}
+            placeholder={gradeSchoolFilter ? "Classe" : "Choisissez une école"}
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            prefix={<BookOutlined />}
+            style={{ width: 240 }}
+            disabled={!gradeSchoolFilter}
+            value={gradeClassFilter}
+            onChange={setGradeClassFilter}
+            options={availableGradeClasses.map((className) => ({
+              label: className,
+              value: className,
             }))}
           />
           <Select
+            className="super-admin-dashboard__grade-filter"
+            classNames={{
+              popup: { root: "super-admin-dashboard__grade-filter-popup" },
+            }}
             placeholder="Période"
             allowClear
-            options={["1er trimestre", "2e trimestre", "3e trimestre"].map(
-              (value) => ({ label: value, value }),
-            )}
+            prefix={<CalendarOutlined />}
+            style={{ width: 210 }}
+            value={gradePeriodFilter}
+            onChange={setGradePeriodFilter}
+            options={gradePeriods.map((period) => ({
+              label: period,
+              value: period,
+            }))}
           />
         </div>
         <Table
-          columns={academicColumns}
-          dataSource={academicRecords}
+          columns={gradeManagementColumns}
+          dataSource={filteredGradeManagementRecords}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1150 }}
+          scroll={{ x: 995 }}
         />
       </Card>
     </section>
@@ -930,6 +1148,19 @@ const SuperAdminDashboard = () => {
 
   return (
     <div className="super-admin-dashboard">
+      <section className="super-admin-dashboard__hero super-admin-dashboard__hero--command">
+        <div className="super-admin-dashboard__hero-copy">
+          <Title level={1}>Bonjour, Administrateur</Title>
+        </div>
+        <div className="super-admin-dashboard__hero-actions">
+          <Button
+            className="super-admin-dashboard__report-button"
+            icon={<DownloadOutlined />}
+          >
+            Rapport
+          </Button>
+        </div>
+      </section>
       {workspace === "Aperçu" && renderOverview()}
       {workspace === "Écoles" && renderSchools()}
       {workspace === "Gestion de cotes" && renderGradeManagement()}
@@ -1011,7 +1242,7 @@ const Metric = ({
 }) => (
   <Col xs={24} sm={12} lg={8} xl={8}>
     <Card
-      className={`super-admin-dashboard__metric super-admin-dashboard__metric--${tone}`}
+      className={`super-admin-dashboard__metric super-admin-dashboard__metric--${tone}${compact ? " super-admin-dashboard__metric--compact" : ""}`}
     >
       <span className="super-admin-dashboard__metric-icon">{icon}</span>
       <Statistic title={label} value={value} />
@@ -1020,29 +1251,6 @@ const Metric = ({
       </small>
     </Card>
   </Col>
-);
-const Notification = ({
-  icon,
-  color,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  color: string;
-  title: string;
-  description: string;
-}) => (
-  <div className="super-admin-dashboard__notification">
-    <span
-      className={`super-admin-dashboard__notification-icon super-admin-dashboard__notification-icon--${color}`}
-    >
-      {icon}
-    </span>
-    <div>
-      <strong>{title}</strong>
-      <small>{description}</small>
-    </div>
-  </div>
 );
 const Module = ({
   icon,

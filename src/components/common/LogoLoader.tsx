@@ -6,6 +6,7 @@ interface LogoLoaderProps {
   duration?: number;
   transparent?: boolean;
   label?: string;
+  className?: string;
 }
 
 /** Full-screen brand pulse animation using the transparent logo asset. */
@@ -14,6 +15,7 @@ export default function LogoLoader({
   duration = 2500,
   transparent = false,
   label = "Chargement...",
+  className = "",
 }: LogoLoaderProps) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -44,7 +46,7 @@ export default function LogoLoader({
 
   return (
     <div
-      className={`logo-loader${transparent ? " logo-loader--transparent" : ""}${isDrawing ? " logo-loader--drawing" : ""}${isComplete ? " logo-loader--complete" : ""}${isExiting ? " logo-loader--exiting" : ""}`}
+      className={`logo-loader${transparent ? " logo-loader--transparent" : ""}${isDrawing ? " logo-loader--drawing" : ""}${isComplete ? " logo-loader--complete" : ""}${isExiting ? " logo-loader--exiting" : ""}${className ? ` ${className}` : ""}`}
       style={{ "--logo-loader-draw-duration": `${drawDuration}ms` } as React.CSSProperties}
       role="status"
       aria-live="polite"

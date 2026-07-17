@@ -33,11 +33,47 @@ const Sidebar: React.FC = () => {
   };
 
   const handleLogout = () => {
+    const loginRoute =
+      user?.role === "super_admin"
+        ? ROUTES.SUPER_ADMIN_LOGIN
+        : user?.role === "director"
+          ? ROUTES.DIRECTOR_LOGIN
+          : ROUTES.LOGIN;
     logout();
-    handleNavigation(ROUTES.LOGIN);
+    handleNavigation(loginRoute);
   };
 
   const getMenuItems = () => {
+    if (user?.role === "super_admin") {
+      return [
+        {
+          key: ROUTES.DASHBOARD,
+          icon: <DashboardOutlined />,
+          label: "Tableau de bord",
+          onClick: () => handleNavigation(ROUTES.DASHBOARD),
+        },
+        {
+          key: ROUTES.SCHOOLS,
+          icon: <BankOutlined />,
+          label: "Écoles",
+          onClick: () => handleNavigation(ROUTES.SCHOOLS),
+        },
+        {
+          key: "super-admin-grades",
+          icon: <BookOutlined />,
+          label: "Gestion de cotes",
+          onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
+        },
+        {
+          key: "logout",
+          icon: <LogoutOutlined />,
+          label: "Déconnexion",
+          onClick: handleLogout,
+          danger: true,
+        },
+      ];
+    }
+
     const isStudentManagementArea = location.pathname === ROUTES.STUDENTS;
     const isSchoolManagementArea = location.pathname === ROUTES.SCHOOLS;
     const isAdministrationArea =
@@ -66,24 +102,12 @@ const Sidebar: React.FC = () => {
           },
         ];
 
-    if (
-      (user?.role === "super_admin" || isSchoolManagementArea) &&
-      !isStudentManagementArea
-    ) {
+    if (isSchoolManagementArea && !isStudentManagementArea) {
       items.push({
         key: ROUTES.SCHOOLS,
         icon: <BankOutlined />,
         label: "Écoles",
         onClick: () => handleNavigation(ROUTES.SCHOOLS),
-      });
-    }
-
-    if (user?.role === "super_admin" && !isAdministrationArea) {
-      items.push({
-        key: "super-admin-grades",
-        icon: <BookOutlined />,
-        label: "Gestion de cotes",
-        onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
       });
     }
 
@@ -159,6 +183,10 @@ const Sidebar: React.FC = () => {
     <>
       {pendingRoute && (
         <LogoLoader
+          className="sidebar-route-loader"
+          transparent
+          duration={2000}
+          label="Chargement..."
           onComplete={() => {
             navigate(pendingRoute);
             setPendingRoute(null);
