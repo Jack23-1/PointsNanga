@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookOutlined,
+  CalendarOutlined,
   CheckOutlined,
+  DownOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   IdcardOutlined,
@@ -24,17 +26,39 @@ interface StudentProfile {
   firstName: string;
   className: string;
   schoolName: string;
+  schoolLogoUrl?: string;
+  photoUrl?: string;
 }
 
 interface LoginResponseData {
   matricule: string;
   student: StudentProfile;
+  period: string;
   timestamp: string;
   status: "success" | "simulated";
 }
 
 const MATRICULE_LENGTH = 6;
 const STUDENT_LOOKUP_DELAY = 2000;
+const STUDENT_FIELDS_REVEAL_DELAY = 950;
+const academicPeriods = [
+  { value: "1ère", label: "1ère période", detail: "Première période", code: "P1" },
+  { value: "2ème", label: "2ème période", detail: "Deuxième période", code: "P2" },
+  {
+    value: "1er Semestre",
+    label: "1er semestre",
+    detail: "Synthèse semestrielle",
+    code: "S1",
+  },
+  { value: "3ème", label: "3ème période", detail: "Troisième période", code: "P3" },
+  { value: "4ème", label: "4ème période", detail: "Quatrième période", code: "P4" },
+  {
+    value: "2ème semestre",
+    label: "2ème semestre",
+    detail: "Synthèse semestrielle",
+    code: "S2",
+  },
+];
 const studentDirectory: Omit<StudentProfile, "id">[] = [
   {
     lastName: "Mukendi",
@@ -72,16 +96,23 @@ export default function Login() {
   const navigate = useNavigate();
   const { updateUser } = useAuth();
   const [matricule, setMatricule] = useState<string>("");
+  const [period, setPeriod] = useState("");
   const [password, setPassword] = useState<string>("");
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [isSearchingStudent, setIsSearchingStudent] = useState(false);
+  const [isPeriodMenuOpen, setIsPeriodMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [mobileFocusField, setMobileFocusField] = useState<"matricule" | "password" | null>(null);
   const matriculeInputRef = useRef<HTMLInputElement>(null);
+  const periodPickerRef = useRef<HTMLDivElement>(null);
+  const periodTriggerRef = useRef<HTMLButtonElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const selectedPeriod = academicPeriods.find(
+    (periodOption) => periodOption.value === period,
+  );
 
   useEffect(() => {
     matriculeInputRef.current?.focus();
@@ -89,7 +120,9 @@ export default function Login() {
 
   useEffect(() => {
     setStudentProfile(null);
+    setPeriod("");
     setPassword("");
+    setIsPeriodMenuOpen(false);
 
     if (matricule.length !== MATRICULE_LENGTH) {
       setIsSearchingStudent(false);
@@ -108,16 +141,59 @@ export default function Login() {
   }, [matricule]);
 
   useEffect(() => {
-    if (!studentProfile) return;
+    if (!studentProfile || period) return;
 
-    const focusTimer = window.setTimeout(() => passwordInputRef.current?.focus(), 650);
+    const focusTimer = window.setTimeout(() => {
+      periodTriggerRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      periodTriggerRef.current?.focus();
+      setIsPeriodMenuOpen(true);
+    }, STUDENT_FIELDS_REVEAL_DELAY);
     return () => window.clearTimeout(focusTimer);
-  }, [studentProfile]);
+  }, [studentProfile, period]);
+
+  useEffect(() => {
+    if (!isPeriodMenuOpen) return;
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!periodPickerRef.current?.contains(event.target as Node)) {
+        setIsPeriodMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPeriodMenuOpen(false);
+        periodTriggerRef.current?.focus();
+      }
+    };
+    const focusFrame = window.requestAnimationFrame(() => {
+      const selectedOption =
+        periodPickerRef.current?.querySelector<HTMLButtonElement>(
+          ".premium-login__period-option.is-selected",
+        );
+      const firstOption =
+        periodPickerRef.current?.querySelector<HTMLButtonElement>(
+          ".premium-login__period-option",
+        );
+      (selectedOption ?? firstOption)?.focus();
+    });
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isPeriodMenuOpen]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const validationError = getStudentLoginValidationError({
       matricule,
+      period,
       password,
       isSearchingStudent,
       isStudentResolved: Boolean(studentProfile),
@@ -141,6 +217,7 @@ export default function Login() {
       const payload: LoginResponseData = {
         matricule,
         student: resolvedStudent,
+        period,
         timestamp: new Date().toISOString(),
         status: "success",
       };
@@ -148,6 +225,7 @@ export default function Login() {
       console.log("[SaaS Auth Simulation Submitting...]", payload);
 
       localStorage.setItem("auth_token", `simulated_token_${Date.now()}`);
+      localStorage.setItem("student_period", period);
       const userData = {
         id: resolvedStudent.id,
         email: matricule,
@@ -237,7 +315,9 @@ export default function Login() {
                     setMatricule(digits);
                     setStudentProfile(null);
                     setIsSearchingStudent(digits.length === MATRICULE_LENGTH);
+                    setPeriod("");
                     setPassword("");
+                    setIsPeriodMenuOpen(false);
                     setShowPassword(false);
                     setErrorMsg(null);
                   }}
@@ -279,13 +359,33 @@ export default function Login() {
             {studentProfile && (
               <div className="premium-login__student-discovery">
                 <div className="premium-login__student-profile-heading">
-                  <span aria-hidden="true">
-                    <CheckOutlined />
+                  <span className="premium-login__school-logo">
+                    <img
+                      src={studentProfile.schoolLogoUrl ?? logo}
+                      alt={`Logo de ${studentProfile.schoolName}`}
+                    />
                   </span>
-                  <div>
-                    <strong>Élève identifié</strong>
-                    <small>Informations récupérées automatiquement</small>
+                  <div className="premium-login__student-school">
+                    <strong>{studentProfile.schoolName}</strong>
+                    <small>Établissement de l’élève</small>
                   </div>
+                  {studentProfile.photoUrl ? (
+                    <span className="premium-login__student-photo">
+                      <img
+                        src={studentProfile.photoUrl}
+                        alt={`Photo de ${studentProfile.firstName} ${studentProfile.lastName}`}
+                      />
+                    </span>
+                  ) : (
+                    <span
+                      className="premium-login__student-avatar"
+                      role="img"
+                      aria-label={`Avatar de ${studentProfile.firstName} ${studentProfile.lastName}`}
+                    >
+                      {studentProfile.firstName.charAt(0)}
+                      {studentProfile.lastName.charAt(0)}
+                    </span>
+                  )}
                 </div>
 
                 <div className="premium-login__grid premium-login__student-profile">
@@ -375,8 +475,146 @@ export default function Login() {
                 </div>
 
                 <div
-                  className="premium-login__field premium-login__field--reveal premium-login__student-password"
+                  className="premium-login__field premium-login__field--reveal premium-login__student-period"
                   style={{ animationDelay: "360ms" }}
+                >
+                  <div className="premium-login__period-heading">
+                    <label htmlFor="student-period">
+                      Période <span aria-hidden="true">*</span>
+                    </label>
+                    {!period && (
+                      <span className="premium-login__period-next-badge">
+                        Étape suivante
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    ref={periodPickerRef}
+                    className="premium-login__director-school-picker premium-login__period-picker"
+                  >
+                    <button
+                      id="student-period"
+                      ref={periodTriggerRef}
+                      type="button"
+                      disabled={isLoading}
+                      className={`premium-login__director-school-trigger${
+                        period
+                          ? ""
+                          : " premium-login__period-trigger--attention"
+                      }`}
+                      aria-haspopup="listbox"
+                      aria-expanded={isPeriodMenuOpen}
+                      aria-controls="student-period-options"
+                      aria-describedby="student-period-guidance"
+                      aria-required="true"
+                      onClick={() =>
+                        setIsPeriodMenuOpen((isOpen) => !isOpen)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setIsPeriodMenuOpen(true);
+                        }
+                      }}
+                    >
+                      <span className="premium-login__director-school-icon">
+                        <CalendarOutlined aria-hidden="true" />
+                      </span>
+                      <span className="premium-login__director-school-value">
+                        <small>Période scolaire</small>
+                        <strong className={period ? "" : "is-placeholder"}>
+                          {selectedPeriod?.label ?? "Choisir une période"}
+                        </strong>
+                      </span>
+                      <span className="premium-login__director-school-chevron">
+                        <DownOutlined aria-hidden="true" />
+                      </span>
+                    </button>
+
+                    {isPeriodMenuOpen && (
+                      <div className="premium-login__director-school-menu premium-login__period-menu">
+                        <div
+                          id="student-period-options"
+                          className="premium-login__director-school-options"
+                          role="listbox"
+                          aria-label="Liste des périodes scolaires"
+                        >
+                          {academicPeriods.map((periodOption, index) => (
+                            <button
+                              key={periodOption.value}
+                              type="button"
+                              role="option"
+                              aria-selected={period === periodOption.value}
+                              className={`premium-login__director-school-option premium-login__period-option${
+                                period === periodOption.value
+                                  ? " is-selected"
+                                  : ""
+                              }`}
+                              style={{
+                                animationDelay: `${55 + index * 45}ms`,
+                              }}
+                              onKeyDown={(event) => {
+                                const options =
+                                  periodPickerRef.current?.querySelectorAll<HTMLButtonElement>(
+                                    ".premium-login__period-option",
+                                  );
+                                if (!options?.length) return;
+
+                                if (event.key === "ArrowDown") {
+                                  event.preventDefault();
+                                  options[(index + 1) % options.length]?.focus();
+                                }
+                                if (event.key === "ArrowUp") {
+                                  event.preventDefault();
+                                  if (index === 0) {
+                                    periodTriggerRef.current?.focus();
+                                  } else {
+                                    options[index - 1]?.focus();
+                                  }
+                                }
+                              }}
+                              onClick={() => {
+                                setPeriod(periodOption.value);
+                                setIsPeriodMenuOpen(false);
+                                setErrorMsg(null);
+                                periodTriggerRef.current?.focus();
+                              }}
+                            >
+                              <span className="premium-login__director-school-monogram">
+                                {periodOption.code}
+                              </span>
+                              <span>
+                                <strong>{periodOption.label}</strong>
+                                <small>{periodOption.detail}</small>
+                              </span>
+                              {period === periodOption.value && (
+                                <CheckOutlined aria-hidden="true" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p
+                    id="student-period-guidance"
+                    className={`premium-login__period-guidance${
+                      period
+                        ? " premium-login__period-guidance--complete"
+                        : ""
+                    }`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {period
+                      ? "Période sélectionnée, vous pouvez saisir votre mot de passe."
+                      : "Choisissez maintenant la période à consulter pour continuer."}
+                  </p>
+                </div>
+
+                <div
+                  className="premium-login__field premium-login__field--reveal premium-login__student-password"
+                  style={{ animationDelay: "430ms" }}
                 >
                   <label htmlFor="password">
                     Mot de passe <span aria-hidden="true">*</span>
@@ -417,11 +655,11 @@ export default function Login() {
 
                 <div
                   className="premium-login__field--reveal premium-login__student-actions"
-                  style={{ animationDelay: "430ms" }}
+                  style={{ animationDelay: "500ms" }}
                 >
                   <button
                     type="submit"
-                    disabled={isLoading || !password}
+                    disabled={isLoading || !period || !password}
                     className="premium-login__submit"
                   >
                     {isLoading ? (

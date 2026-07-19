@@ -18,11 +18,13 @@ export const validateRequired = (value: unknown): boolean => {
 /** Validation du formulaire élève après résolution automatique du matricule. */
 export const getStudentLoginValidationError = ({
   matricule,
+  period,
   password,
   isSearchingStudent,
   isStudentResolved,
 }: {
   matricule: string;
+  period: string;
   password: string;
   isSearchingStudent: boolean;
   isStudentResolved: boolean;
@@ -37,6 +39,10 @@ export const getStudentLoginValidationError = ({
 
   if (!isStudentResolved) {
     return "Aucun élève n’a été identifié avec ce matricule.";
+  }
+
+  if (!period) {
+    return "Sélectionnez une période scolaire.";
   }
 
   if (!password) {
