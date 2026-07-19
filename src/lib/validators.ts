@@ -15,24 +15,28 @@ export const validateRequired = (value: unknown): boolean => {
   return value !== null && value !== undefined;
 };
 
-/** Validation minimale du formulaire élève : aucun plafond de caractères côté interface. */
+/** Validation du formulaire élève après résolution automatique du matricule. */
 export const getStudentLoginValidationError = ({
-  schoolName,
-  className,
   matricule,
   password,
+  isSearchingStudent,
+  isStudentResolved,
 }: {
-  schoolName: string;
-  className: string;
   matricule: string;
   password: string;
+  isSearchingStudent: boolean;
+  isStudentResolved: boolean;
 }): string | null => {
-  if (!schoolName || !className) {
-    return "Sélectionnez une école et une classe valides.";
+  if (!/^\d{6}$/.test(matricule)) {
+    return "Le matricule doit contenir exactement 6 chiffres.";
   }
 
-  if (!matricule.trim()) {
-    return "Saisissez votre matricule.";
+  if (isSearchingStudent) {
+    return "La recherche de l’élève est encore en cours.";
+  }
+
+  if (!isStudentResolved) {
+    return "Aucun élève n’a été identifié avec ce matricule.";
   }
 
   if (!password) {

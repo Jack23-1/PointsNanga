@@ -1,12 +1,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  BankOutlined,
   BookOutlined,
   CheckOutlined,
-  DownOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
+  IdcardOutlined,
   LockOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -18,66 +17,110 @@ import studentBackground from "../../../assets/student-login-background.jpg";
 import mobileStudentsBackground from "../../../assets/eleves.png";
 import LogoLoader from "../../../components/common/LogoLoader";
 
-interface LoginResponseData {
-  schoolName: string;
+interface StudentProfile {
+  id: string;
+  lastName: string;
+  postName: string;
+  firstName: string;
   className: string;
+  schoolName: string;
+}
+
+interface LoginResponseData {
   matricule: string;
-  rememberMe: boolean;
+  student: StudentProfile;
   timestamp: string;
   status: "success" | "simulated";
 }
 
-const schools = ["Lycée Saint-Michel", "Collège Notre-Dame", "Institut Technique Matadi"];
-const classes = ["6ème A", "6ème B", "5ème A", "5ème B"];
+const MATRICULE_LENGTH = 6;
+const STUDENT_LOOKUP_DELAY = 2000;
+const studentDirectory: Omit<StudentProfile, "id">[] = [
+  {
+    lastName: "Mukendi",
+    postName: "Kabeya",
+    firstName: "Jean",
+    className: "6ème A",
+    schoolName: "Lycée Saint-Michel",
+  },
+  {
+    lastName: "Ilunga",
+    postName: "Mbuyi",
+    firstName: "Esther",
+    className: "5ème B",
+    schoolName: "Collège Notre-Dame",
+  },
+  {
+    lastName: "Kanku",
+    postName: "Tshibangu",
+    firstName: "Grâce",
+    className: "6ème B",
+    schoolName: "Institut Technique Matadi",
+  },
+];
+
+const findStudentByMatricule = (matricule: string): StudentProfile => {
+  const directoryIndex = Number(matricule.slice(-2)) % studentDirectory.length;
+
+  return {
+    id: `student-${matricule}`,
+    ...studentDirectory[directoryIndex],
+  };
+};
 
 export default function Login() {
   const navigate = useNavigate();
   const { updateUser } = useAuth();
-  const [schoolName, setSchoolName] = useState<string>("");
-  const [className, setClassName] = useState<string>("");
   const [matricule, setMatricule] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-  const [rememberMe, setRememberMe] = useState<boolean>(false);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [isSearchingStudent, setIsSearchingStudent] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [isSchoolMenuOpen, setIsSchoolMenuOpen] = useState(false);
-  const [isClassMenuOpen, setIsClassMenuOpen] = useState(false);
   const [mobileFocusField, setMobileFocusField] = useState<"matricule" | "password" | null>(null);
-  const [schoolConfirmed, setSchoolConfirmed] = useState(false);
-  const [classConfirmed, setClassConfirmed] = useState(false);
-  const [matriculeConfirmed, setMatriculeConfirmed] = useState(false);
-  const classInputRef = useRef<HTMLButtonElement>(null);
   const matriculeInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
-  const isClassVisible = schoolConfirmed && Boolean(schoolName.trim());
-  const isMatriculeVisible = isClassVisible && classConfirmed && Boolean(className.trim());
-  const isPasswordVisible = isMatriculeVisible && matriculeConfirmed && Boolean(matricule.trim());
+  useEffect(() => {
+    matriculeInputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
-    if (isClassVisible) classInputRef.current?.focus();
-  }, [isClassVisible]);
+    setStudentProfile(null);
+    setPassword("");
+
+    if (matricule.length !== MATRICULE_LENGTH) {
+      setIsSearchingStudent(false);
+      return;
+    }
+
+    setIsSearchingStudent(true);
+    setErrorMsg(null);
+
+    const lookupTimer = window.setTimeout(() => {
+      setStudentProfile(findStudentByMatricule(matricule));
+      setIsSearchingStudent(false);
+    }, STUDENT_LOOKUP_DELAY);
+
+    return () => window.clearTimeout(lookupTimer);
+  }, [matricule]);
 
   useEffect(() => {
-    if (isMatriculeVisible) matriculeInputRef.current?.focus();
-  }, [isMatriculeVisible]);
+    if (!studentProfile) return;
 
-  useEffect(() => {
-    if (!isPasswordVisible) return;
-
-    const focusTimer = window.setTimeout(() => passwordInputRef.current?.focus(), 260);
+    const focusTimer = window.setTimeout(() => passwordInputRef.current?.focus(), 650);
     return () => window.clearTimeout(focusTimer);
-  }, [isPasswordVisible]);
+  }, [studentProfile]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const validationError = getStudentLoginValidationError({
-      schoolName,
-      className,
       matricule,
       password,
+      isSearchingStudent,
+      isStudentResolved: Boolean(studentProfile),
     });
 
     if (validationError) {
@@ -85,6 +128,9 @@ export default function Login() {
       return;
     }
 
+    if (!studentProfile) return;
+
+    const resolvedStudent = studentProfile;
     setIsLoading(true);
     setIsPageTransitioning(true);
     setErrorMsg(null);
@@ -93,10 +139,8 @@ export default function Login() {
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       const payload: LoginResponseData = {
-        schoolName: schoolName.trim(),
-        className: className.trim(),
-        matricule: matricule.trim(),
-        rememberMe,
+        matricule,
+        student: resolvedStudent,
         timestamp: new Date().toISOString(),
         status: "success",
       };
@@ -105,13 +149,13 @@ export default function Login() {
 
       localStorage.setItem("auth_token", `simulated_token_${Date.now()}`);
       const userData = {
-        id: "1",
+        id: resolvedStudent.id,
         email: matricule,
-        firstName: "Jean",
-        lastName: "Mukendi",
+        firstName: resolvedStudent.firstName,
+        lastName: `${resolvedStudent.lastName} ${resolvedStudent.postName}`,
         role: "student" as const,
-        schoolId: schoolName.trim(),
-        classId: className.trim(),
+        schoolId: resolvedStudent.schoolName,
+        classId: resolvedStudent.className,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -126,7 +170,11 @@ export default function Login() {
   };
 
   return (
-    <main className={`premium-login${isPageTransitioning ? " premium-login--loading" : ""}`}>
+    <main
+      className={`premium-login premium-login--student-lookup${
+        isPageTransitioning ? " premium-login--loading" : ""
+      }`}
+    >
       <div
         aria-hidden="true"
         className="premium-login__background"
@@ -151,208 +199,243 @@ export default function Login() {
         </header>
 
         <form onSubmit={handleSubmit} className="premium-login__form">
-            {errorMsg && (
-              <div className="premium-login__alert" role="alert">
-                <span aria-hidden="true">!</span>
-                <p>{errorMsg}</p>
-              </div>
-            )}
+          {errorMsg && (
+            <div className="premium-login__alert" role="alert">
+              <span aria-hidden="true">!</span>
+              <p>{errorMsg}</p>
+            </div>
+          )}
 
-            <div className="premium-login__progressive-fields" aria-live="polite">
-              <div className="premium-login__field">
-                <label htmlFor="school">
-                  École <span aria-hidden="true">*</span>
-                </label>
-                <div className="premium-login__school-picker">
-                  <button
-                    id="school"
-                    type="button"
-                    className="premium-login__school-trigger"
-                    aria-haspopup="listbox"
-                    aria-expanded={isSchoolMenuOpen}
-                    aria-controls="school-options"
-                    disabled={isLoading}
-                    onClick={() => setIsSchoolMenuOpen((isOpen) => !isOpen)}
-                  >
-                    <BankOutlined aria-hidden="true" />
-                    <span className={schoolName ? "" : "premium-login__school-placeholder"}>{schoolName || "Sélectionner votre école"}</span>
-                    <DownOutlined className="premium-login__school-chevron" aria-hidden="true" />
-                  </button>
-                  {isSchoolMenuOpen && <div id="school-options" className="premium-login__school-menu" role="listbox" aria-label="Liste des écoles">
-                    {schools.map((school, index) => (
-                      <button
-                        key={school}
-                        type="button"
-                        role="option"
-                        aria-selected={schoolName === school}
-                        className={schoolName === school ? "premium-login__school-option premium-login__school-option--selected" : "premium-login__school-option"}
-                        style={{ animationDelay: `${70 + index * 65}ms` }}
-                        onClick={() => {
-                          setSchoolName(school);
-                          setSchoolConfirmed(true);
-                          setIsSchoolMenuOpen(false);
-                      setClassName("");
-                      setMatricule("");
-                      setPassword("");
-                      setClassConfirmed(false);
-                      setMatriculeConfirmed(false);
-                        }}
-                      >
-                        <span>{school}</span>
-                        {schoolName === school && <CheckOutlined aria-hidden="true" />}
-                      </button>
-                    ))}
-                  </div>}
-                </div>
-              </div>
-
-              {isClassVisible && <div className="premium-login__field premium-login__field--reveal">
-                <label htmlFor="class">
-                  Classe <span aria-hidden="true">*</span>
-                </label>
-                <div className="premium-login__school-picker">
-                  <button
-                    id="class"
-                    type="button"
-                    className="premium-login__school-trigger"
-                    aria-haspopup="listbox"
-                    aria-expanded={isClassMenuOpen}
-                    aria-controls="class-options"
-                    disabled={isLoading}
-                    ref={classInputRef}
-                    onClick={() => setIsClassMenuOpen((isOpen) => !isOpen)}
-                  >
-                    <BookOutlined aria-hidden="true" />
-                    <span className={className ? "" : "premium-login__school-placeholder"}>{className || "Sélectionner votre classe"}</span>
-                    <DownOutlined className="premium-login__school-chevron" aria-hidden="true" />
-                  </button>
-                  {isClassMenuOpen && <div id="class-options" className="premium-login__school-menu" role="listbox" aria-label="Liste des classes">
-                    {classes.map((classOption, index) => (
-                      <button
-                        key={classOption}
-                        type="button"
-                        role="option"
-                        aria-selected={className === classOption}
-                        className={className === classOption ? "premium-login__school-option premium-login__school-option--selected" : "premium-login__school-option"}
-                        style={{ animationDelay: `${70 + index * 65}ms` }}
-                        onClick={() => {
-                          setClassName(classOption);
-                          setClassConfirmed(true);
-                          setIsClassMenuOpen(false);
-                      setMatricule("");
-                      setPassword("");
-                      setMatriculeConfirmed(false);
-                        }}
-                      >
-                        <span>{classOption}</span>
-                        {className === classOption && <CheckOutlined aria-hidden="true" />}
-                      </button>
-                    ))}
-                  </div>}
-                </div>
-              </div>}
-
-            {isMatriculeVisible && <div className="premium-login__field premium-login__field--reveal">
+          <div className="premium-login__progressive-fields">
+            <div className="premium-login__field">
               <label htmlFor="matricule">
-                Matricule élève <span aria-hidden="true">*</span>
+                Matricule <span aria-hidden="true">*</span>
               </label>
-              <div className="premium-login__input-wrap">
-                <UserOutlined aria-hidden="true" />
+              <div
+                className={`premium-login__input-wrap premium-login__matricule-wrap${
+                  isSearchingStudent ? " premium-login__matricule-wrap--searching" : ""
+                }${studentProfile ? " premium-login__matricule-wrap--resolved" : ""}`}
+              >
+                <IdcardOutlined aria-hidden="true" />
                 <input
                   id="matricule"
                   type="text"
                   required
                   disabled={isLoading}
-                    value={matricule}
-                    ref={matriculeInputRef}
-                    autoComplete="username"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    onChange={(e) => {
-                      setMatricule(e.target.value);
-                      setMatriculeConfirmed(false);
-                      setPassword("");
-                    }}
-                    onFocus={() => setMobileFocusField("matricule")}
-                    onBlur={() => {
-                      setMatriculeConfirmed(Boolean(matricule.trim()));
-                      setMobileFocusField(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && matricule.trim()) {
-                        e.preventDefault();
-                        setMatriculeConfirmed(true);
-                      }
-                    }}
-                  placeholder="Ex. ELV20260001"
-                />
-              </div>
-            </div>}
-
-            {isPasswordVisible && <div className="premium-login__field premium-login__field--reveal">
-              <label htmlFor="password">
-                Mot de passe <span aria-hidden="true">*</span>
-              </label>
-              <div className="premium-login__input-wrap">
-                <LockOutlined aria-hidden="true" />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  disabled={isLoading}
-                    value={password}
-                    ref={passwordInputRef}
-                  autoComplete="current-password"
-                  onChange={(e) => setPassword(e.target.value)}
-                  onFocus={() => setMobileFocusField("password")}
+                  value={matricule}
+                  ref={matriculeInputRef}
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={MATRICULE_LENGTH}
+                  autoComplete="username"
+                  spellCheck={false}
+                  aria-describedby="matricule-status"
+                  onChange={(e) => {
+                    const digits = e.target.value
+                      .replace(/\D/g, "")
+                      .slice(0, MATRICULE_LENGTH);
+                    setMatricule(digits);
+                    setStudentProfile(null);
+                    setIsSearchingStudent(digits.length === MATRICULE_LENGTH);
+                    setPassword("");
+                    setShowPassword(false);
+                    setErrorMsg(null);
+                  }}
+                  onFocus={() => setMobileFocusField("matricule")}
                   onBlur={() => setMobileFocusField(null)}
-                  placeholder="Votre mot de passe"
+                  placeholder="Ex. 260001"
                 />
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="premium-login__password-toggle"
-                  aria-label={
-                    showPassword
-                      ? "Masquer le mot de passe"
-                      : "Afficher le mot de passe"
-                  }
-                >
-                  {showPassword ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                </button>
+                {isSearchingStudent && (
+                  <span
+                    className="premium-login__lookup-spinner"
+                    aria-hidden="true"
+                  />
+                )}
+                {studentProfile && (
+                  <span
+                    className="premium-login__lookup-check"
+                    aria-hidden="true"
+                  >
+                    <CheckOutlined />
+                  </span>
+                )}
               </div>
-            </div>}
-
-            {isPasswordVisible && <div className="premium-login__field premium-login__field--reveal premium-login__form-actions">
-            <div className="premium-login__options">
-              <label className="premium-login__remember">
-                <input
-                  type="checkbox"
-                  disabled={isLoading}
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                />
-                <span>Se souvenir de moi</span>
-              </label>
-              <a href="#forgot-password">Mot de passe oublié ?</a>
+              <p
+                id="matricule-status"
+                className={`premium-login__lookup-status${
+                  isSearchingStudent ? " premium-login__lookup-status--searching" : ""
+                }${studentProfile ? " premium-login__lookup-status--resolved" : ""}`}
+                role="status"
+                aria-live="polite"
+              >
+                {isSearchingStudent
+                  ? "Recherche du dossier élève…"
+                  : studentProfile
+                    ? "Dossier élève retrouvé"
+                    : `${matricule.length}/${MATRICULE_LENGTH} chiffres`}
+              </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="premium-login__submit"
-            >
-              {isLoading ? (
-                <>
-                  <span className="premium-login__spinner" /> Vérification…
-                </>
-              ) : (
-                "Valider"
-              )}
-            </button>
-            </div>}
-            </div>
+            {studentProfile && (
+              <div className="premium-login__student-discovery">
+                <div className="premium-login__student-profile-heading">
+                  <span aria-hidden="true">
+                    <CheckOutlined />
+                  </span>
+                  <div>
+                    <strong>Élève identifié</strong>
+                    <small>Informations récupérées automatiquement</small>
+                  </div>
+                </div>
+
+                <div className="premium-login__grid premium-login__student-profile">
+                  <div
+                    className="premium-login__field premium-login__field--reveal"
+                    style={{ animationDelay: "80ms" }}
+                  >
+                    <label htmlFor="student-last-name">Nom</label>
+                    <div className="premium-login__input-wrap premium-login__input-wrap--resolved">
+                      <UserOutlined aria-hidden="true" />
+                      <input
+                        id="student-last-name"
+                        type="text"
+                        value={studentProfile.lastName}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                      <CheckOutlined
+                        className="premium-login__resolved-check"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="premium-login__field premium-login__field--reveal"
+                    style={{ animationDelay: "150ms" }}
+                  >
+                    <label htmlFor="student-post-name">Post-nom</label>
+                    <div className="premium-login__input-wrap premium-login__input-wrap--resolved">
+                      <UserOutlined aria-hidden="true" />
+                      <input
+                        id="student-post-name"
+                        type="text"
+                        value={studentProfile.postName}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                      <CheckOutlined
+                        className="premium-login__resolved-check"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="premium-login__field premium-login__field--reveal"
+                    style={{ animationDelay: "220ms" }}
+                  >
+                    <label htmlFor="student-first-name">Prénom</label>
+                    <div className="premium-login__input-wrap premium-login__input-wrap--resolved">
+                      <UserOutlined aria-hidden="true" />
+                      <input
+                        id="student-first-name"
+                        type="text"
+                        value={studentProfile.firstName}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                      <CheckOutlined
+                        className="premium-login__resolved-check"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="premium-login__field premium-login__field--reveal"
+                    style={{ animationDelay: "290ms" }}
+                  >
+                    <label htmlFor="student-class">Classe</label>
+                    <div className="premium-login__input-wrap premium-login__input-wrap--resolved">
+                      <BookOutlined aria-hidden="true" />
+                      <input
+                        id="student-class"
+                        type="text"
+                        value={studentProfile.className}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                      <CheckOutlined
+                        className="premium-login__resolved-check"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="premium-login__field premium-login__field--reveal premium-login__student-password"
+                  style={{ animationDelay: "360ms" }}
+                >
+                  <label htmlFor="password">
+                    Mot de passe <span aria-hidden="true">*</span>
+                  </label>
+                  <div className="premium-login__input-wrap">
+                    <LockOutlined aria-hidden="true" />
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      required
+                      disabled={isLoading}
+                      value={password}
+                      ref={passwordInputRef}
+                      autoComplete="current-password"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setErrorMsg(null);
+                      }}
+                      onFocus={() => setMobileFocusField("password")}
+                      onBlur={() => setMobileFocusField(null)}
+                      placeholder="Votre mot de passe"
+                    />
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="premium-login__password-toggle"
+                      aria-label={
+                        showPassword
+                          ? "Masquer le mot de passe"
+                          : "Afficher le mot de passe"
+                      }
+                    >
+                      {showPassword ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="premium-login__field--reveal premium-login__student-actions"
+                  style={{ animationDelay: "430ms" }}
+                >
+                  <button
+                    type="submit"
+                    disabled={isLoading || !password}
+                    className="premium-login__submit"
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="premium-login__spinner" /> Vérification…
+                      </>
+                    ) : (
+                      "Valider"
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </form>
 
         <footer className="premium-login__footer">

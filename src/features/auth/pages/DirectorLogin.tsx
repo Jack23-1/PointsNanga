@@ -48,6 +48,8 @@ export default function DirectorLogin() {
   const schoolPickerRef = useRef<HTMLDivElement>(null);
   const schoolTriggerRef = useRef<HTMLButtonElement>(null);
   const schoolSearchRef = useRef<HTMLInputElement>(null);
+  const directorCardRef = useRef<HTMLElement>(null);
+  const monitorShowcaseRef = useRef<HTMLDivElement>(null);
 
   const normalizedSchoolSearch = schoolSearch
     .trim()
@@ -98,6 +100,29 @@ export default function DirectorLogin() {
     return () => window.cancelAnimationFrame(focusFrame);
   }, [isSchoolMenuOpen]);
 
+  useEffect(() => {
+    const card = directorCardRef.current;
+    const showcase = monitorShowcaseRef.current;
+    if (!card || !showcase) return;
+
+    const synchronizeHeights = () => {
+      showcase.style.setProperty(
+        "--director-form-height",
+        `${card.getBoundingClientRect().height}px`,
+      );
+    };
+
+    synchronizeHeights();
+    const resizeObserver = new ResizeObserver(synchronizeHeights);
+    resizeObserver.observe(card);
+    window.addEventListener("resize", synchronizeHeights);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", synchronizeHeights);
+    };
+  }, []);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -147,6 +172,7 @@ export default function DirectorLogin() {
       <div className="premium-login__director-layout premium-login__director-layout--cinematic">
         <div className="premium-login__director-form-pane premium-login__director-form-pane--cinematic">
           <section
+            ref={directorCardRef}
             className="premium-login__card premium-login__director-card"
             aria-labelledby="director-login-title"
           >
@@ -395,33 +421,52 @@ export default function DirectorLogin() {
         </div>
 
         <aside
-          className="premium-login__director-ad premium-login__director-ad--editorial premium-login__director-ad--cinematic"
+          className="premium-login__director-ad premium-login__director-ad--editorial premium-login__director-ad--cinematic premium-login__director-monitor-stage"
           aria-label="Espace publicitaire partenaire"
         >
-          <div className="premium-login__director-ad-body">
-            <div className="premium-login__director-ad-spot">
-              {directorAdSlides.map((image, index) => (
-                <img
-                  key={image}
-                  src={image}
-                  alt=""
+          <div
+            ref={monitorShowcaseRef}
+            className="premium-login__director-monitor-showcase"
+          >
+            <div className="premium-login__director-monitor">
+              <div className="premium-login__director-monitor-frame">
+                <span
+                  className="premium-login__director-monitor-camera"
                   aria-hidden="true"
-                  className="premium-login__director-ad-slide"
-                  style={{ animationDelay: `${index * 5}s` }}
                 />
-              ))}
+                <div className="premium-login__director-monitor-screen">
+                  <div className="premium-login__director-ad-body">
+                    <div className="premium-login__director-ad-spot">
+                      {directorAdSlides.map((image, index) => (
+                        <img
+                          key={image}
+                          src={image}
+                          alt=""
+                          aria-hidden="true"
+                          className="premium-login__director-ad-slide"
+                          style={{ animationDelay: `${index * 5}s` }}
+                        />
+                      ))}
+                      <div
+                        className="premium-login__director-ad-shade"
+                        aria-hidden="true"
+                      />
+                      <div
+                        className="premium-login__director-ad-pagination"
+                        aria-hidden="true"
+                      >
+                        <i />
+                        <i />
+                        <i />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div
-                className="premium-login__director-ad-shade"
+                className="premium-login__director-monitor-stand"
                 aria-hidden="true"
               />
-              <div
-                className="premium-login__director-ad-pagination"
-                aria-hidden="true"
-              >
-                <i />
-                <i />
-                <i />
-              </div>
             </div>
           </div>
         </aside>
