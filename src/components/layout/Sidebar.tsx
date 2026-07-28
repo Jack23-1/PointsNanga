@@ -10,7 +10,7 @@ import {
   FileTextOutlined,
   PlusCircleOutlined,
   TeamOutlined,
-  SettingOutlined,
+  ReadOutlined,
   LogoutOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
@@ -74,6 +74,60 @@ const Sidebar: React.FC = () => {
       ];
     }
 
+    if (user?.role === "director") {
+      return [
+        {
+          key: ROUTES.DASHBOARD,
+          icon: <DashboardOutlined />,
+          label: "Tableau de bord",
+          onClick: () => handleNavigation(ROUTES.DASHBOARD),
+        },
+        {
+          key: ROUTES.STUDENTS,
+          icon: <UserOutlined />,
+          label: "Élèves",
+          onClick: () => handleNavigation(ROUTES.STUDENTS),
+        },
+        {
+          key: ROUTES.CLASSES,
+          icon: <TeamOutlined />,
+          label: "Classes",
+          onClick: () => handleNavigation(ROUTES.CLASSES),
+        },
+        {
+          key: ROUTES.TEACHERS,
+          icon: <UserOutlined />,
+          label: "Professeurs",
+          onClick: () => handleNavigation(ROUTES.TEACHERS),
+        },
+        {
+          key: ROUTES.COURSES,
+          icon: <ReadOutlined />,
+          label: "Cours",
+          onClick: () => handleNavigation(ROUTES.COURSES),
+        },
+        {
+          key: ROUTES.HOMEROOM_TEACHERS,
+          icon: <TeamOutlined />,
+          label: "Gestion des titulaires",
+          onClick: () => handleNavigation(ROUTES.HOMEROOM_TEACHERS),
+        },
+        {
+          key: ROUTES.COURSE_ASSIGNMENTS,
+          icon: <BookOutlined />,
+          label: "Attributions cours",
+          onClick: () => handleNavigation(ROUTES.COURSE_ASSIGNMENTS),
+        },
+        {
+          key: "logout",
+          icon: <LogoutOutlined />,
+          label: "Déconnexion",
+          onClick: handleLogout,
+          danger: true,
+        },
+      ];
+    }
+
     const isStudentManagementArea = location.pathname === ROUTES.STUDENTS;
     const isSchoolManagementArea = location.pathname === ROUTES.SCHOOLS;
     const isAdministrationArea =
@@ -109,29 +163,6 @@ const Sidebar: React.FC = () => {
         label: "Écoles",
         onClick: () => handleNavigation(ROUTES.SCHOOLS),
       });
-    }
-
-    if (user?.role === "director" && !isAdministrationArea) {
-      items.push(
-        {
-          key: "students",
-          icon: <UserOutlined />,
-          label: "Élèves",
-          onClick: () => handleNavigation(ROUTES.STUDENTS),
-        },
-        {
-          key: "results",
-          icon: <FileTextOutlined />,
-          label: "Résultats",
-          onClick: () => handleNavigation(ROUTES.RESULTS),
-        },
-        {
-          key: "director-settings",
-          icon: <SettingOutlined />,
-          label: "Paramètres",
-          onClick: () => handleNavigation(ROUTES.SETTINGS),
-        },
-      );
     }
 
     if (user?.role === "teacher" && !isAdministrationArea) {
@@ -194,6 +225,7 @@ const Sidebar: React.FC = () => {
         />
       )}
       <Sider
+        className={user?.role === "director" ? "director-sidebar" : undefined}
         width={250}
         collapsible
         collapsed={collapsed}

@@ -1,157 +1,303 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  BookOutlined,
-  CheckCircleFilled,
-  HeartOutlined,
+  EyeOutlined,
+  CalendarOutlined,
+  FilterOutlined,
   HomeOutlined,
   IdcardOutlined,
-  LeftOutlined,
-  PhoneOutlined,
-  RightOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  SearchOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
+  PhoneOutlined,
+  UploadOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Alert, Avatar, Button, Card, Col, Form, Input, Row, Select, Steps, Tag, Typography, message } from "antd";
-import type { Student, StudentFormData } from "../../../types";
-import logo from "../../../assets/logo.png";
+import {
+  Avatar,
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  Modal,
+  Row,
+  Select,
+  Table,
+  Tag,
+  Upload,
+  message,
+} from "antd";
 
-const { Title, Text } = Typography;
+interface StudentRow {
+  key: string;
+  matricule: string;
+  name: string;
+  detail: string;
+  className: string;
+  gender: "Fille" | "Garçon";
+  status: "Actif" | "En attente";
+  photo: string;
+}
 
-type EnrollmentFormData = StudentFormData & {
-  enrollmentDate: string;
-  emergencyContact?: string;
-  healthNotes?: string;
-};
-
-const stepFields: (Array<keyof EnrollmentFormData>)[] = [
-  ["firstName", "lastName", "dateOfBirth", "gender"],
-  ["schoolId", "classId", "enrollmentDate"],
-  ["parentPhone", "parentEmail", "address"],
+const initialStudents: StudentRow[] = [
+  { key: "1", matricule: "PN-24018", name: "Grâce Kalonji", detail: "Gombe, Kinshasa", className: "6ème A", gender: "Fille", status: "Actif", photo: "https://i.pravatar.cc/160?img=47" },
+  { key: "2", matricule: "PN-24031", name: "Jonathan Mbala", detail: "Lemba, Kinshasa", className: "6ème A", gender: "Garçon", status: "Actif", photo: "https://i.pravatar.cc/160?img=12" },
+  { key: "3", matricule: "PN-24044", name: "Naomie Kanku", detail: "Matete, Kinshasa", className: "6ème B", gender: "Fille", status: "Actif", photo: "https://i.pravatar.cc/160?img=32" },
+  { key: "4", matricule: "PN-24057", name: "David Ilunga", detail: "Ngaliema, Kinshasa", className: "5ème A", gender: "Garçon", status: "Actif", photo: "https://i.pravatar.cc/160?img=15" },
+  { key: "5", matricule: "PN-24063", name: "Esther Mulumba", detail: "Bandalungwa, Kinshasa", className: "5ème A", gender: "Fille", status: "En attente", photo: "https://i.pravatar.cc/160?img=45" },
+  { key: "6", matricule: "PN-24079", name: "Samuel Tshibangu", detail: "Kasa-Vubu, Kinshasa", className: "5ème B", gender: "Garçon", status: "Actif", photo: "https://i.pravatar.cc/160?img=11" },
+  { key: "7", matricule: "PN-24086", name: "Déborah Kabeya", detail: "Lingwala, Kinshasa", className: "4ème A", gender: "Fille", status: "Actif", photo: "https://i.pravatar.cc/160?img=44" },
+  { key: "8", matricule: "PN-24092", name: "Moïse Kazadi", detail: "Barumbu, Kinshasa", className: "4ème B", gender: "Garçon", status: "Actif", photo: "https://i.pravatar.cc/160?img=13" },
 ];
 
+interface StudentFormValues {
+  lastName: string;
+  middleName: string;
+  firstName: string;
+  gender: "Fille" | "Garçon";
+  className: string;
+  birthDate: string;
+  address: string;
+  phone?: string;
+}
+
+const classOptions = ["Toutes les classes", "6ème A", "6ème B", "5ème A", "5ème B", "4ème A", "4ème B"];
+
 const StudentsPage = () => {
-  const [form] = Form.useForm<EnrollmentFormData>();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [formValues, setFormValues] = useState<Partial<EnrollmentFormData>>({});
-  const [recentStudents, setRecentStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState(initialStudents);
+  const [search, setSearch] = useState("");
+  const [selectedClass, setSelectedClass] = useState("Toutes les classes");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form] = Form.useForm<StudentFormValues>();
+  const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
 
-  const nextStep = async () => {
-    try {
-      await form.validateFields(stepFields[currentStep]);
-      setCurrentStep((step) => step + 1);
-    } catch {
-      // Ant Design highlights the fields that need attention.
-    }
+  const filteredStudents = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("fr");
+    return students.filter((student) => {
+      const matchesSearch =
+        !query ||
+        `${student.name} ${student.matricule} ${student.detail}`
+          .toLocaleLowerCase("fr")
+          .includes(query);
+      const matchesClass =
+        selectedClass === "Toutes les classes" ||
+        student.className === selectedClass;
+      return matchesSearch && matchesClass;
+    });
+  }, [search, selectedClass, students]);
+
+  const addStudent = async () => {
+    const values = await form.validateFields();
+    const newStudent: StudentRow = {
+      key: `${Date.now()}`,
+      matricule: `PN-${Math.floor(25000 + Math.random() * 900)}`,
+      name: `${values.lastName} ${values.middleName} ${values.firstName}`,
+      detail: values.phone ? `${values.address} · ${values.phone}` : values.address,
+      className: values.className,
+      gender: values.gender,
+      status: "Actif",
+      photo: studentPhoto || `https://i.pravatar.cc/160?u=${encodeURIComponent(values.firstName)}`,
+    };
+    setStudents((current) => [newStudent, ...current]);
+    form.resetFields();
+    setStudentPhoto(null);
+    setIsModalOpen(false);
+    message.success(`${newStudent.name} a été ajouté(e).`);
   };
 
-  const createStudent = async () => {
-    try {
-      const values = await form.validateFields();
-      const now = new Date().toISOString();
-      const student: Student = {
-        ...values,
-        id: `student-${Date.now()}`,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      setRecentStudents((students) => [student, ...students]);
-      form.resetFields();
-      setFormValues({});
-      setCurrentStep(0);
-      message.success(`${student.firstName} ${student.lastName} a été inscrit(e) avec succès.`);
-    } catch {
-      // Ant Design shows field-level validation feedback.
-    }
-  };
-
-  const displayName = [formValues.firstName, formValues.lastName].filter(Boolean).join(" ") || "Nouvel élève";
+  const columns = [
+    {
+      title: "Élève",
+      key: "student",
+      render: (_: unknown, student: StudentRow) => (
+        <div className="students-directory__identity">
+          <Avatar size={48} src={student.photo} icon={<UserOutlined />} />
+          <div>
+            <strong>{student.name}</strong>
+            <span><HomeOutlined /> {student.detail}</span>
+          </div>
+        </div>
+      ),
+    },
+    { title: "Matricule", dataIndex: "matricule", key: "matricule", render: (value: string) => <code className="students-directory__matricule">{value}</code> },
+    { title: "Classe", dataIndex: "className", key: "className", render: (value: string) => <Tag className="students-directory__class-tag">{value}</Tag> },
+    { title: "Genre", dataIndex: "gender", key: "gender" },
+    {
+      title: "Statut",
+      dataIndex: "status",
+      key: "status",
+      render: (status: StudentRow["status"]) => (
+        <Tag className={`students-directory__status students-directory__status--${status === "Actif" ? "active" : "pending"}`}>
+          <i /> {status}
+        </Tag>
+      ),
+    },
+    {
+      title: "",
+      key: "actions",
+      render: () => (
+        <div className="students-directory__actions">
+          <Button type="text" icon={<EyeOutlined />} aria-label="Voir le dossier" />
+          <Button type="text" icon={<MoreOutlined />} aria-label="Plus d’actions" />
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <section className="student-enrollment">
-      <header className="student-enrollment__hero">
-        <div>
-          <span className="student-enrollment__eyebrow">Administration de l'établissement</span>
-          <Title level={1}>Inscrire un élève</Title>
-          <Text>Un parcours guidé en trois étapes pour créer un dossier scolaire complet.</Text>
+    <section className="students-directory">
+      <header className="students-directory__hero">
+        <div className="students-directory__hero-seal" aria-hidden="true">
+          <SafetyCertificateOutlined />
+          <span>PN</span>
         </div>
-        <div className="student-enrollment__hero-brand">
-          <div className="student-enrollment__hero-logo"><img src={logo} alt="Logo Points Nanga" /></div>
-          <div className="student-enrollment__hero-icon"><IdcardOutlined /></div>
+        <div className="students-directory__hero-copy">
+          <span className="students-directory__official-label">
+            Registre officiel de l’établissement
+          </span>
+          <h1>Répertoire des élèves</h1>
+          <p>Administration, suivi et consultation des dossiers scolaires.</p>
+          <div className="students-directory__registry-meta">
+            <span>Année académique <strong>2025 — 2026</strong></span>
+            <i />
+            <span>Registre <strong>actif et sécurisé</strong></span>
+          </div>
+        </div>
+        <div className="students-directory__hero-action">
+          <span><i /> Dernière synchronisation : aujourd’hui</span>
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={() => setIsModalOpen(true)}
+            className="students-directory__add"
+          >
+            Ajouter un élève
+          </Button>
         </div>
       </header>
 
-      <div className="student-enrollment__layout">
-        <Card className="student-enrollment__form-card" bordered={false}>
-          <Steps current={currentStep} responsive={false} items={[{ title: "Identité", icon: <UserOutlined /> }, { title: "Scolarité", icon: <BookOutlined /> }, { title: "Tuteur", icon: <SafetyCertificateOutlined /> }]} />
+      <Row gutter={[14, 14]} className="students-directory__summary">
+        <Col xs={12} md={6}><Card><strong>{students.length}</strong><span>Élèves affichés</span></Card></Col>
+        <Col xs={12} md={6}><Card><strong>24</strong><span>Classes actives</span></Card></Col>
+        <Col xs={12} md={6}><Card><strong>51%</strong><span>Filles</span></Card></Col>
+        <Col xs={12} md={6}><Card><strong>98%</strong><span>Dossiers complets</span></Card></Col>
+      </Row>
 
-          <Form
-            form={form}
-            layout="vertical"
-            className="student-enrollment__form"
-            initialValues={{ gender: "male", schoolId: "school-1", enrollmentDate: new Date().toISOString().slice(0, 10) }}
-            onValuesChange={(_, allValues) => setFormValues(allValues)}
-          >
-            {currentStep === 0 && <section className="student-enrollment__step">
-              <div className="student-enrollment__step-heading"><span className="student-enrollment__step-icon"><UserOutlined /></span><div><h2>Identité de l'élève</h2><p>Les informations figurant sur les documents scolaires.</p></div></div>
-              <Row gutter={[16, 0]}>
-                <Col xs={24} sm={12}><Form.Item label="Prénom" name="firstName" rules={[{ required: true, message: "Le prénom est requis." }]}><Input placeholder="Ex. Grâce" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="Nom" name="lastName" rules={[{ required: true, message: "Le nom est requis." }]}><Input placeholder="Ex. Kalonji" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="Date de naissance" name="dateOfBirth" rules={[{ required: true, message: "La date de naissance est requise." }]}><Input type="date" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="Genre" name="gender" rules={[{ required: true, message: "Le genre est requis." }]}><Select options={[{ value: "male", label: "Garçon" }, { value: "female", label: "Fille" }]} /></Form.Item></Col>
-              </Row>
-            </section>}
-
-            {currentStep === 1 && <section className="student-enrollment__step">
-              <div className="student-enrollment__step-heading"><span className="student-enrollment__step-icon student-enrollment__step-icon--blue"><BookOutlined /></span><div><h2>Parcours scolaire</h2><p>Choisissez l'établissement, la classe et la date d'inscription.</p></div></div>
-              <Form.Item label="École" name="schoolId" rules={[{ required: true, message: "L'école est requise." }]}><Select options={[{ value: "school-1", label: "Lycée Saint-Michel" }, { value: "school-2", label: "Collège Notre-Dame" }, { value: "school-3", label: "Institut Technique Matadi" }]} /></Form.Item>
-              <Row gutter={[16, 0]}>
-                <Col xs={24} sm={12}><Form.Item label="Classe" name="classId" rules={[{ required: true, message: "La classe est requise." }]}><Select placeholder="Sélectionner une classe" options={["6ème A", "6ème B", "5ème A", "5ème B"].map((value) => ({ value, label: value }))} /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="Date d'inscription" name="enrollmentDate" rules={[{ required: true, message: "La date d'inscription est requise." }]}><Input type="date" /></Form.Item></Col>
-              </Row>
-              <Alert type="info" showIcon message="Un matricule unique sera généré automatiquement après l'inscription." />
-            </section>}
-
-            {currentStep === 2 && <section className="student-enrollment__step">
-              <div className="student-enrollment__step-heading"><span className="student-enrollment__step-icon student-enrollment__step-icon--green"><PhoneOutlined /></span><div><h2>Parent ou tuteur</h2><p>Ces données permettent de garder le contact avec la famille.</p></div></div>
-              <Row gutter={[16, 0]}>
-                <Col xs={24} sm={12}><Form.Item label="Téléphone du tuteur" name="parentPhone" rules={[{ required: true, message: "Le téléphone est requis." }]}><Input placeholder="+243 810 000 000" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="E-mail du tuteur" name="parentEmail" rules={[{ required: true, type: "email", message: "Saisissez un e-mail valide." }]}><Input placeholder="parent@email.com" /></Form.Item></Col>
-              </Row>
-              <Form.Item label="Adresse de résidence" name="address" rules={[{ required: true, message: "L'adresse est requise." }]}><Input prefix={<HomeOutlined />} placeholder="Quartier, commune, ville" /></Form.Item>
-              <Row gutter={[16, 0]}>
-                <Col xs={24} sm={12}><Form.Item label="Contact d'urgence (facultatif)" name="emergencyContact"><Input placeholder="Nom et téléphone" /></Form.Item></Col>
-                <Col xs={24} sm={12}><Form.Item label="Information médicale (facultatif)" name="healthNotes"><Input prefix={<HeartOutlined />} placeholder="Allergie, traitement…" /></Form.Item></Col>
-              </Row>
-            </section>}
-          </Form>
-
-          <div className="student-enrollment__actions">
-            {currentStep > 0 ? <Button icon={<LeftOutlined />} onClick={() => setCurrentStep((step) => step - 1)}>Retour</Button> : <span />}
-            {currentStep < 2 ? <Button type="primary" icon={<RightOutlined />} iconPosition="end" onClick={nextStep}>Continuer</Button> : <Button type="primary" icon={<CheckCircleFilled />} onClick={createStudent}>Créer le dossier élève</Button>}
+      <Card className="students-directory__card">
+        <div className="students-directory__card-title">
+          <div>
+            <span>Registre central</span>
+            <h2>Liste nominative</h2>
           </div>
-        </Card>
+          <small>Document administratif numérique</small>
+        </div>
+        <div className="students-directory__toolbar">
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="Rechercher un élève ou un matricule..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            allowClear
+          />
+          <Select
+            suffixIcon={<FilterOutlined />}
+            value={selectedClass}
+            onChange={setSelectedClass}
+            options={classOptions.map((value) => ({ value, label: value }))}
+          />
+          <span className="students-directory__count"><TeamOutlined /> {filteredStudents.length} élèves</span>
+        </div>
+        <Table<StudentRow>
+          columns={columns}
+          dataSource={filteredStudents}
+          pagination={{ pageSize: 6, showSizeChanger: false }}
+          scroll={{ x: 850 }}
+        />
+      </Card>
 
-        <aside className="student-enrollment__aside">
-          <Card className="student-enrollment__preview" bordered={false}>
-            <span className="student-enrollment__preview-label">Aperçu du dossier</span>
-            <Avatar size={74} icon={<UserOutlined />} className="student-enrollment__avatar" />
-            <h2>{displayName}</h2>
-            <p>{formValues.classId || "Classe à sélectionner"}</p>
-            <div className="student-enrollment__preview-details">
-              <div><span>École</span><strong>{formValues.schoolId === "school-1" ? "Lycée Saint-Michel" : formValues.schoolId || "À sélectionner"}</strong></div>
-              <div><span>Contact tuteur</span><strong>{formValues.parentPhone || "À compléter"}</strong></div>
+      <Modal
+        width={720}
+        title={
+          <div className="students-directory__modal-title">
+            <span><IdcardOutlined /></span>
+            <div>
+              <strong>Nouveau dossier élève</strong>
+              <small>Registre officiel de l’établissement</small>
             </div>
-            <Tag color="processing">Dossier en préparation</Tag>
-          </Card>
-          <Card className="student-enrollment__tip" bordered={false}><CheckCircleFilled /><div><strong>Inscription guidée</strong><span>Les champs facultatifs peuvent être complétés plus tard depuis le dossier élève.</span></div></Card>
-        </aside>
-      </div>
-
-      {recentStudents.length > 0 && <Card className="student-enrollment__recent" title="Élèves récemment inscrits" bordered={false}>
-        {recentStudents.map((student) => <div key={student.id}><Avatar icon={<UserOutlined />} /><span><strong>{student.firstName} {student.lastName}</strong><Text type="secondary">{student.classId} · {student.schoolId}</Text></span><Tag color="success">Actif</Tag></div>)}
-      </Card>}
+          </div>
+        }
+        open={isModalOpen}
+        onCancel={() => { setIsModalOpen(false); setStudentPhoto(null); form.resetFields(); }}
+        onOk={addStudent}
+        okText="Ajouter"
+        cancelText="Annuler"
+        className="students-directory__modal"
+      >
+        <Form form={form} layout="vertical" className="students-directory__student-form">
+          <div className="students-directory__form-banner">
+            <SafetyCertificateOutlined />
+            <div>
+              <strong>Fiche d’identification scolaire</strong>
+              <span>Complétez les informations officielles de l’élève.</span>
+            </div>
+            <b>2025—2026</b>
+          </div>
+          <div className="students-directory__photo-field">
+            <Avatar size={78} src={studentPhoto || undefined} icon={<UserOutlined />} />
+            <div>
+              <strong>Photo de l’élève</strong>
+              <Upload
+                accept="image/*"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  const reader = new FileReader();
+                  reader.onload = () => setStudentPhoto(String(reader.result));
+                  reader.readAsDataURL(file);
+                  return false;
+                }}
+              >
+                <Button size="small" icon={<UploadOutlined />}>Choisir une photo</Button>
+              </Upload>
+            </div>
+          </div>
+          <div className="students-directory__form-section-title">
+            <span>01</span><div><strong>Identité de l’élève</strong><small>Informations figurant sur les documents officiels</small></div>
+          </div>
+          <Row gutter={14}>
+            <Col span={8}><Form.Item name="lastName" label="Nom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Nom" /></Form.Item></Col>
+            <Col span={8}><Form.Item name="middleName" label="Postnom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Postnom" /></Form.Item></Col>
+            <Col span={8}><Form.Item name="firstName" label="Prénom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Prénom" /></Form.Item></Col>
+          </Row>
+          <div className="students-directory__form-section-title">
+            <span>02</span><div><strong>Scolarité et naissance</strong><small>Classe, sexe et date de naissance</small></div>
+          </div>
+          <Row gutter={14}>
+            <Col span={12}>
+              <Form.Item name="className" label="Classe" rules={[{ required: true, message: "Choisissez une classe." }]}>
+                <Select options={classOptions.slice(1).map((value) => ({ value, label: value }))} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="gender" label="Sexe" rules={[{ required: true, message: "Choisissez le sexe." }]}>
+                <Select options={[{ value: "Fille", label: "Fille" }, { value: "Garçon", label: "Garçon" }]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={14}>
+            <Col span={12}><Form.Item name="birthDate" label="Date de naissance" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<CalendarOutlined />} type="date" /></Form.Item></Col>
+            <Col span={12}><Form.Item name="phone" label="Téléphone (facultatif)"><Input prefix={<PhoneOutlined />} placeholder="+243..." /></Form.Item></Col>
+          </Row>
+          <div className="students-directory__form-section-title">
+            <span>03</span><div><strong>Coordonnées</strong><small>Adresse physique et contact</small></div>
+          </div>
+          <Form.Item name="address" label="Adresse physique" rules={[{ required: true, message: "Saisissez l’adresse." }]}>
+            <Input prefix={<HomeOutlined />} placeholder="Quartier, commune, ville" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </section>
   );
 };

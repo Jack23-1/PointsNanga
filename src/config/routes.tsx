@@ -11,6 +11,7 @@ import StudentDashboard from "../features/dashboard/student/Dashboard";
 import SchoolsPage from "../features/schools/pages/SchoolsPage";
 import GradesPage from "../features/grades/pages/GradesPage";
 import StudentsPage from "../features/students/pages/StudentsPage";
+import AcademicDirectoryPage from "../features/management/pages/AcademicDirectoryPage";
 
 // Placeholder pages - will be replaced with actual feature pages
 const ResultsPage = () => <div>Results</div>;
@@ -100,6 +101,46 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <GradesPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.CLASSES,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicDirectoryPage kind="classes" />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.TEACHERS,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicDirectoryPage kind="teachers" />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.COURSES,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicDirectoryPage kind="courses" />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.HOMEROOM_TEACHERS,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicDirectoryPage kind="homeroom" />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.COURSE_ASSIGNMENTS,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicDirectoryPage kind="assignments" />
       </ProtectedRoute>
     ),
   },
