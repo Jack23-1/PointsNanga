@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 
 export const useApi = <T>(url: string, immediate = true) => {
@@ -6,7 +6,7 @@ export const useApi = <T>(url: string, immediate = true) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetch = async () => {
+  const fetch = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -17,18 +17,18 @@ export const useApi = <T>(url: string, immediate = true) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [url]);
 
   useEffect(() => {
     if (immediate) {
       fetch();
     }
-  }, [url, immediate]);
+  }, [fetch, immediate]);
 
   return { data, loading, error, refetch: fetch };
 };
 
-export const useMutation = <T, P = any>(url: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'POST') => {
+export const useMutation = <T, P = unknown>(url: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'POST') => {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);

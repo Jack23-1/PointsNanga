@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Layout, Menu, Button } from "antd";
+import { Layout, Menu, Button, type MenuProps } from "antd";
 import { MenuOutlined } from "@ant-design/icons";
 import {
   DashboardOutlined,
@@ -78,7 +78,7 @@ const Sidebar: React.FC = () => {
     const isSchoolManagementArea = location.pathname === ROUTES.SCHOOLS;
     const isAdministrationArea =
       isStudentManagementArea || isSchoolManagementArea;
-    const items: any[] = isStudentManagementArea
+    const items: NonNullable<MenuProps["items"]> = isStudentManagementArea
       ? [
           {
             key: "add-student",

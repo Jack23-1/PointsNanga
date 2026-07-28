@@ -25,7 +25,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (token && storedUser) {
       try {
         setUser(JSON.parse(storedUser));
-      } catch (error) {
+      } catch {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
       }
@@ -34,16 +34,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
-    try {
-      const response = await api.post<AuthResponse>('/auth/login', credentials);
-      const { user: userData, token } = response.data;
-      
-      localStorage.setItem('auth_token', token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-    } catch (error) {
-      throw error;
-    }
+    const response = await api.post<AuthResponse>('/auth/login', credentials);
+    const { user: userData, token } = response.data;
+    
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
   };
 
   const logout = () => {

@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -41,19 +41,19 @@ class ApiClient {
     );
   }
 
-  public get<T>(url: string, params?: any) {
+  public get<T>(url: string, params?: AxiosRequestConfig['params']) {
     return this.client.get<T>(url, { params });
   }
 
-  public post<T>(url: string, data?: any) {
+  public post<T>(url: string, data?: unknown) {
     return this.client.post<T>(url, data);
   }
 
-  public put<T>(url: string, data?: any) {
+  public put<T>(url: string, data?: unknown) {
     return this.client.put<T>(url, data);
   }
 
-  public patch<T>(url: string, data?: any) {
+  public patch<T>(url: string, data?: unknown) {
     return this.client.patch<T>(url, data);
   }
 

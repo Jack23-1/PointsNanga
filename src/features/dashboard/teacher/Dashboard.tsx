@@ -20,6 +20,10 @@ import {
 
 const { Title, Text } = Typography;
 
+interface SubjectRecord {
+  total: number;
+}
+
 const TeacherDashboard = () => {
   const columns = [
     {
@@ -36,7 +40,7 @@ const TeacherDashboard = () => {
       title: "Élèves Notés",
       dataIndex: "graded",
       key: "graded",
-      render: (graded: number, record: any) => (
+      render: (graded: number, record: SubjectRecord) => (
         <Text>
           {graded} / {record.total}
         </Text>
