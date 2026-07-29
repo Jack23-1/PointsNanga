@@ -1,0 +1,429 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("superadmin")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model affectations_directeurs {
+  id_affectation_directeur BigInt           @id @default(autoincrement())
+  id_directeur             BigInt
+  id_ecole                 BigInt
+  id_annee_scolaire        BigInt
+  date_debut               DateTime         @db.Date
+  date_fin                 DateTime?        @db.Date
+  est_principal            Boolean          @default(true)
+  date_creation            DateTime         @default(now()) @db.Timestamptz(6)
+  directeurs               directeurs       @relation(fields: [id_directeur], references: [id_directeur], onUpdate: NoAction, map: "fk_affectation_directeur")
+  annees_scolaires         annees_scolaires @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_affectation_directeur_annee")
+  ecoles                   ecoles           @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_affectation_directeur_ecole")
+
+  @@unique([id_directeur, id_ecole, id_annee_scolaire], map: "uq_affectation_directeur")
+}
+
+model affectations_professeurs {
+  id_affectation_professeur BigInt           @id @default(autoincrement())
+  id_professeur             BigInt
+  id_cours_classe           BigInt
+  id_annee_scolaire         BigInt
+  date_affectation          DateTime         @default(dbgenerated("CURRENT_DATE")) @db.Date
+  statut                    statut_general   @default(ACTIF)
+  date_creation             DateTime         @default(now()) @db.Timestamptz(6)
+  cours_classes             cours_classes    @relation(fields: [id_cours_classe], references: [id_cours_classe], onUpdate: NoAction, map: "fk_affectation_cours_classe")
+  professeurs               professeurs      @relation(fields: [id_professeur], references: [id_professeur], onUpdate: NoAction, map: "fk_affectation_professeur")
+  annees_scolaires          annees_scolaires @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_affectation_professeur_annee")
+
+  @@unique([id_cours_classe, id_annee_scolaire], map: "uq_professeur_cours_classe_annee")
+  @@index([id_professeur], map: "idx_affectations_professeur")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model annees_scolaires {
+  id_annee_scolaire        BigInt                     @id @default(autoincrement())
+  id_ecole                 BigInt
+  libelle                  String                     @db.VarChar(20)
+  date_debut               DateTime                   @db.Date
+  date_fin                 DateTime                   @db.Date
+  est_active               Boolean                    @default(false)
+  statut                   statut_annee_scolaire      @default(PLANIFIEE)
+  date_creation            DateTime                   @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour         DateTime                   @default(now()) @db.Timestamptz(6)
+  affectations_directeurs  affectations_directeurs[]
+  affectations_professeurs affectations_professeurs[]
+  ecoles                   ecoles                     @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_annee_ecole")
+  cours_classes            cours_classes[]
+  inscriptions             inscriptions[]
+  periodes                 periodes[]
+  titulaires               titulaires[]
+
+  @@unique([id_ecole, libelle], map: "uq_annee_ecole")
+  @@index([id_ecole], map: "idx_annees_ecole")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model classes {
+  id_classe         BigInt             @id @default(autoincrement())
+  id_ecole          BigInt
+  id_niveau         BigInt
+  id_option         BigInt?
+  libelle           String             @db.VarChar(150)
+  code_classe       String             @db.VarChar(30)
+  capacite          Int?
+  statut            statut_general     @default(ACTIF)
+  date_creation     DateTime           @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour  DateTime           @default(now()) @db.Timestamptz(6)
+  ecoles            ecoles             @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_classe_ecole")
+  niveaux           niveaux            @relation(fields: [id_niveau], references: [id_niveau], onUpdate: NoAction, map: "fk_classe_niveau")
+  options_scolaires options_scolaires? @relation(fields: [id_option], references: [id_option], onDelete: Restrict, onUpdate: NoAction, map: "fk_classe_option")
+  cours_classes     cours_classes[]
+  inscriptions      inscriptions[]
+  titulaires        titulaires[]
+
+  @@unique([id_ecole, code_classe], map: "uq_classe_code")
+  @@index([id_ecole], map: "idx_classes_ecole")
+  @@index([id_niveau], map: "idx_classes_niveau")
+  @@index([id_option], map: "idx_classes_option")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cotes {
+  id_cote          BigInt        @id @default(autoincrement())
+  id_inscription   BigInt
+  id_cours_classe  BigInt
+  id_periode       BigInt
+  id_titulaire     BigInt
+  cote_obtenue     Decimal       @db.Decimal(6, 2)
+  observation      String?
+  date_saisie      DateTime      @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour DateTime      @default(now()) @db.Timestamptz(6)
+  cours_classes    cours_classes @relation(fields: [id_cours_classe], references: [id_cours_classe], onUpdate: NoAction, map: "fk_cote_cours_classe")
+  inscriptions     inscriptions  @relation(fields: [id_inscription], references: [id_inscription], onUpdate: NoAction, map: "fk_cote_inscription")
+  periodes         periodes      @relation(fields: [id_periode], references: [id_periode], onUpdate: NoAction, map: "fk_cote_periode")
+  titulaires       titulaires    @relation(fields: [id_titulaire], references: [id_titulaire], onUpdate: NoAction, map: "fk_cote_titulaire")
+
+  @@unique([id_inscription, id_cours_classe, id_periode], map: "uq_cote_eleve_cours_periode")
+  @@index([id_cours_classe], map: "idx_cotes_cours")
+  @@index([id_inscription], map: "idx_cotes_inscription")
+  @@index([id_periode], map: "idx_cotes_periode")
+}
+
+model cours {
+  id_cours         BigInt          @id @default(autoincrement())
+  id_ecole         BigInt
+  libelle          String          @db.VarChar(150)
+  code_cours       String?         @db.VarChar(30)
+  description      String?
+  statut           statut_general  @default(ACTIF)
+  date_creation    DateTime        @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour DateTime        @default(now()) @db.Timestamptz(6)
+  ecoles           ecoles          @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_cours_ecole")
+  cours_classes    cours_classes[]
+
+  @@unique([id_ecole, code_cours], map: "uq_cours_code")
+  @@unique([id_ecole, libelle], map: "uq_cours_libelle")
+  @@index([id_ecole], map: "idx_cours_ecole")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cours_classes {
+  id_cours_classe          BigInt                     @id @default(autoincrement())
+  id_cours                 BigInt
+  id_classe                BigInt
+  id_annee_scolaire        BigInt
+  ponderation              Decimal                    @db.Decimal(6, 2)
+  volume_horaire           Int?
+  statut                   statut_general             @default(ACTIF)
+  date_creation            DateTime                   @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour         DateTime                   @default(now()) @db.Timestamptz(6)
+  affectations_professeurs affectations_professeurs[]
+  cotes                    cotes[]
+  annees_scolaires         annees_scolaires           @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_cours_classe_annee")
+  classes                  classes                    @relation(fields: [id_classe], references: [id_classe], onUpdate: NoAction, map: "fk_cours_classe_classe")
+  cours                    cours                      @relation(fields: [id_cours], references: [id_cours], onUpdate: NoAction, map: "fk_cours_classe_cours")
+
+  @@unique([id_cours, id_classe, id_annee_scolaire], map: "uq_cours_classe_annee")
+  @@index([id_classe, id_annee_scolaire], map: "idx_cours_classes_classe_annee")
+}
+
+model directeurs {
+  id_directeur              BigInt                    @id @default(autoincrement())
+  id_ecole                  BigInt
+  nom                       String                    @db.VarChar(100)
+  postnom                   String?                   @db.VarChar(100)
+  prenom                    String                    @db.VarChar(100)
+  sexe                      String?                   @db.VarChar(20)
+  telephone                 String?                   @db.VarChar(30)
+  email                     String?                   @db.VarChar(150)
+  code_connexion            String                    @unique @db.VarChar(50)
+  mot_de_passe_hash         String
+  doit_changer_mot_de_passe Boolean                   @default(true)
+  statut_compte             statut_compte             @default(ACTIF)
+  derniere_connexion        DateTime?                 @db.Timestamptz(6)
+  date_creation             DateTime                  @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour          DateTime                  @default(now()) @db.Timestamptz(6)
+  affectations_directeurs   affectations_directeurs[]
+  ecoles                    ecoles                    @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_directeur_ecole")
+  titulaires                titulaires[]
+
+  @@index([id_ecole], map: "idx_directeurs_ecole")
+}
+
+model ecoles {
+  id_ecole                BigInt                    @id @default(autoincrement())
+  nom_ecole               String                    @db.VarChar(150)
+  code_ecole              String                    @unique @db.VarChar(30)
+  adresse                 String?                   @db.VarChar(255)
+  telephone               String?                   @db.VarChar(30)
+  email                   String?                   @unique @db.VarChar(150)
+  logo                    String?                   @db.VarChar(255)
+  statut                  statut_general            @default(ACTIF)
+  date_creation           DateTime                  @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour        DateTime                  @default(now()) @db.Timestamptz(6)
+  affectations_directeurs affectations_directeurs[]
+  annees_scolaires        annees_scolaires[]
+  classes                 classes[]
+  cours                   cours[]
+  directeurs              directeurs[]
+  eleves                  eleves[]
+  niveaux                 niveaux[]
+  options_scolaires       options_scolaires[]
+  professeurs             professeurs[]
+}
+
+model eleves {
+  id_eleve         BigInt         @id @default(autoincrement())
+  id_ecole         BigInt
+  matricule        String         @db.VarChar(50)
+  nom              String         @db.VarChar(100)
+  postnom          String?        @db.VarChar(100)
+  prenom           String         @db.VarChar(100)
+  sexe             String?        @db.VarChar(20)
+  date_naissance   DateTime?      @db.Date
+  lieu_naissance   String?        @db.VarChar(150)
+  adresse          String?        @db.VarChar(255)
+  nom_tuteur       String?        @db.VarChar(200)
+  telephone_tuteur String?        @db.VarChar(30)
+  photo            String?        @db.VarChar(255)
+  statut           statut_general @default(ACTIF)
+  date_creation    DateTime       @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour DateTime       @default(now()) @db.Timestamptz(6)
+  ecoles           ecoles         @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_eleve_ecole")
+  inscriptions     inscriptions[]
+
+  @@unique([id_ecole, matricule], map: "uq_eleve_matricule")
+  @@index([id_ecole], map: "idx_eleves_ecole")
+  @@index([nom, postnom, prenom], map: "idx_eleves_nom")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inscriptions {
+  id_inscription    BigInt             @id @default(autoincrement())
+  id_eleve          BigInt
+  id_classe         BigInt
+  id_annee_scolaire BigInt
+  date_inscription  DateTime           @default(dbgenerated("CURRENT_DATE")) @db.Date
+  numero_ordre      Int?
+  statut            statut_inscription @default(INSCRIT)
+  observation       String?
+  date_creation     DateTime           @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour  DateTime           @default(now()) @db.Timestamptz(6)
+  cotes             cotes[]
+  annees_scolaires  annees_scolaires   @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_inscription_annee")
+  classes           classes            @relation(fields: [id_classe], references: [id_classe], onUpdate: NoAction, map: "fk_inscription_classe")
+  eleves            eleves             @relation(fields: [id_eleve], references: [id_eleve], onUpdate: NoAction, map: "fk_inscription_eleve")
+  resultats         resultats[]
+
+  @@unique([id_eleve, id_annee_scolaire], map: "uq_eleve_annee")
+  @@unique([id_classe, id_annee_scolaire, numero_ordre], map: "uq_numero_ordre_classe")
+  @@index([id_classe, id_annee_scolaire], map: "idx_inscriptions_classe_annee")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model niveaux {
+  id_niveau        BigInt         @id @default(autoincrement())
+  id_ecole         BigInt
+  libelle          String         @db.VarChar(100)
+  ordre            Int
+  description      String?
+  statut           statut_general @default(ACTIF)
+  date_creation    DateTime       @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour DateTime       @default(now()) @db.Timestamptz(6)
+  classes          classes[]
+  ecoles           ecoles         @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_niveau_ecole")
+
+  @@unique([id_ecole, libelle], map: "uq_niveau_libelle")
+  @@unique([id_ecole, ordre], map: "uq_niveau_ordre")
+}
+
+model options_scolaires {
+  id_option        BigInt         @id @default(autoincrement())
+  id_ecole         BigInt
+  libelle          String         @db.VarChar(100)
+  code_option      String?        @db.VarChar(30)
+  description      String?
+  statut           statut_general @default(ACTIF)
+  date_creation    DateTime       @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour DateTime       @default(now()) @db.Timestamptz(6)
+  classes          classes[]
+  ecoles           ecoles         @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_option_ecole")
+
+  @@unique([id_ecole, code_option], map: "uq_option_code")
+  @@unique([id_ecole, libelle], map: "uq_option_libelle")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model periodes {
+  id_periode        BigInt           @id @default(autoincrement())
+  id_annee_scolaire BigInt
+  libelle           String           @db.VarChar(100)
+  numero            Int
+  date_debut        DateTime?        @db.Date
+  date_fin          DateTime?        @db.Date
+  est_ouverte       Boolean          @default(false)
+  statut            statut_general   @default(ACTIF)
+  date_creation     DateTime         @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour  DateTime         @default(now()) @db.Timestamptz(6)
+  cotes             cotes[]
+  annees_scolaires  annees_scolaires @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_periode_annee")
+  resultats         resultats[]
+
+  @@unique([id_annee_scolaire, libelle], map: "uq_periode_libelle")
+  @@unique([id_annee_scolaire, numero], map: "uq_periode_numero")
+}
+
+model professeurs {
+  id_professeur            BigInt                     @id @default(autoincrement())
+  id_ecole                 BigInt
+  matricule                String?                    @db.VarChar(50)
+  nom                      String                     @db.VarChar(100)
+  postnom                  String?                    @db.VarChar(100)
+  prenom                   String                     @db.VarChar(100)
+  sexe                     String?                    @db.VarChar(20)
+  telephone                String?                    @db.VarChar(30)
+  email                    String?                    @db.VarChar(150)
+  adresse                  String?                    @db.VarChar(255)
+  specialite               String?                    @db.VarChar(150)
+  statut                   statut_general             @default(ACTIF)
+  date_creation            DateTime                   @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour         DateTime                   @default(now()) @db.Timestamptz(6)
+  affectations_professeurs affectations_professeurs[]
+  ecoles                   ecoles                     @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_professeur_ecole")
+  titulaires               titulaires[]
+
+  @@unique([id_ecole, matricule], map: "uq_professeur_matricule")
+  @@index([id_ecole], map: "idx_professeurs_ecole")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model resultats {
+  id_resultat       BigInt             @id @default(autoincrement())
+  id_inscription    BigInt
+  id_periode        BigInt
+  total_obtenu      Decimal            @default(0) @db.Decimal(10, 2)
+  total_ponderation Decimal            @default(0) @db.Decimal(10, 2)
+  pourcentage       Decimal            @default(0) @db.Decimal(6, 2)
+  moyenne           Decimal?           @db.Decimal(6, 2)
+  rang              Int?
+  mention           mention_resultat?
+  decision          decision_resultat?
+  statut            statut_resultat    @default(BROUILLON)
+  date_calcul       DateTime           @default(now()) @db.Timestamptz(6)
+  date_publication  DateTime?          @db.Timestamptz(6)
+  date_mise_a_jour  DateTime           @default(now()) @db.Timestamptz(6)
+  inscriptions      inscriptions       @relation(fields: [id_inscription], references: [id_inscription], onUpdate: NoAction, map: "fk_resultat_inscription")
+  periodes          periodes           @relation(fields: [id_periode], references: [id_periode], onUpdate: NoAction, map: "fk_resultat_periode")
+
+  @@unique([id_inscription, id_periode], map: "uq_resultat_inscription_periode")
+  @@index([id_periode], map: "idx_resultats_periode")
+  @@index([rang], map: "idx_resultats_rang")
+}
+
+model titulaires {
+  id_titulaire              BigInt           @id @default(autoincrement())
+  id_professeur             BigInt
+  id_classe                 BigInt
+  id_annee_scolaire         BigInt
+  id_directeur_createur     BigInt
+  code_connexion            String           @unique @db.VarChar(50)
+  mot_de_passe_hash         String
+  doit_changer_mot_de_passe Boolean          @default(true)
+  statut_compte             statut_compte    @default(ACTIF)
+  derniere_connexion        DateTime?        @db.Timestamptz(6)
+  date_nomination           DateTime         @default(dbgenerated("CURRENT_DATE")) @db.Date
+  date_creation             DateTime         @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour          DateTime         @default(now()) @db.Timestamptz(6)
+  cotes                     cotes[]
+  annees_scolaires          annees_scolaires @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_titulaire_annee")
+  classes                   classes          @relation(fields: [id_classe], references: [id_classe], onUpdate: NoAction, map: "fk_titulaire_classe")
+  directeurs                directeurs       @relation(fields: [id_directeur_createur], references: [id_directeur], onUpdate: NoAction, map: "fk_titulaire_directeur")
+  professeurs               professeurs      @relation(fields: [id_professeur], references: [id_professeur], onUpdate: NoAction, map: "fk_titulaire_professeur")
+
+  @@unique([id_professeur, id_classe, id_annee_scolaire], map: "uq_professeur_titulaire_classe_annee")
+  @@unique([id_classe, id_annee_scolaire], map: "uq_titulaire_classe_annee")
+  @@index([id_annee_scolaire], map: "idx_titulaires_annee")
+  @@index([id_professeur], map: "idx_titulaires_professeur")
+}
+
+enum decision_resultat {
+  ADMIS
+  AJOURNE
+  ECHEC
+  REDOUBLE
+  DIPLOME
+}
+
+enum mention_resultat {
+  INSUFFISANT
+  PASSABLE
+  SATISFACTION
+  DISTINCTION
+  GRANDE_DISTINCTION
+}
+
+enum statut_annee_scolaire {
+  PLANIFIEE
+  EN_COURS
+  CLOTUREE
+}
+
+enum statut_compte {
+  ACTIF
+  BLOQUE
+  DESACTIVE
+}
+
+enum statut_general {
+  ACTIF
+  INACTIF
+}
+
+enum statut_inscription {
+  INSCRIT
+  TRANSFERE
+  ABANDONNE
+  EXCLU
+  DIPLOME
+}
+
+enum statut_resultat {
+  BROUILLON
+  CALCULE
+  PUBLIE
+  VERROUILLE
+}

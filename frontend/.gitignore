@@ -1,15 +1,5 @@
-# Dependencies and build outputs
-node_modules/
-dist/
-dist-ssr/
-
-# Environment files (keep templates)
-.env
-.env.*
-!.env.example
-
 # Logs
-logs/
+logs
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -17,11 +7,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Local and editor files
+node_modules
+dist
+dist-ssr
 *.local
+
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea/
+.idea
 .DS_Store
 *.suo
 *.ntvs*
