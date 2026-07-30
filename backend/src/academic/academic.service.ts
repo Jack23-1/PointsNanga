@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { randomInt } from "node:crypto";
 import * as bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
@@ -9,12 +9,14 @@ import {
   AssignStudentDto,
   CreateClassDto,
   CreateCourseAssignmentDto,
+  CreateHomeroomAssignmentDto,
   CreateCourseDto,
   CreateOptionDto,
   CreateSchoolDto,
   CreateSchoolYearDto,
   CreateStudentDto,
   CreateTeacherDto,
+  SaveHomeroomGradesDto,
   UpdateClassDto,
   UpdateCourseDto,
   UpdateOptionDto,
@@ -45,6 +47,16 @@ const SCHOOL_PASSWORD_CHARACTERS =
 const generateSchoolPassword = () =>
   Array.from(
     { length: 12 },
+    () =>
+      SCHOOL_PASSWORD_CHARACTERS[
+        randomInt(SCHOOL_PASSWORD_CHARACTERS.length)
+      ],
+  ).join("");
+const generateHomeroomCode = () =>
+  `TIT-${Array.from({ length: 4 }, () => randomInt(1, 10)).join("")}`;
+const generateHomeroomPassword = () =>
+  Array.from(
+    { length: 10 },
     () =>
       SCHOOL_PASSWORD_CHARACTERS[
         randomInt(SCHOOL_PASSWORD_CHARACTERS.length)
@@ -162,6 +174,274 @@ export class AcademicService {
         students: schoolClass._count.inscriptions,
       })),
     };
+  }
+
+  async getHomeroomDashboard(homeroomId: string) {
+    const id_titulaire = toBigInt(homeroomId);
+    const homeroom = await this.prisma.titulaires.findFirst({
+      where: { id_titulaire, statut_compte: "ACTIF" },
+      include: {
+        classes: { include: { ecoles: true } },
+        professeurs: true,
+        annees_scolaires: true,
+      },
+    });
+    if (!homeroom) throw new NotFoundException("Compte titulaire introuvable.");
+
+    const id_classe = homeroom.id_classe;
+    const id_annee_scolaire = homeroom.id_annee_scolaire;
+    const [students, courses, gradeCount, openPeriod] = await Promise.all([
+      this.prisma.inscriptions.findMany({
+        where: {
+          id_classe,
+          id_annee_scolaire,
+          statut: "INSCRIT",
+          eleves: { statut: "ACTIF" },
+        },
+        include: { eleves: true },
+        orderBy: [{ numero_ordre: "asc" }, { eleves: { nom: "asc" } }],
+      }),
+      this.prisma.cours_classes.findMany({
+        where: {
+          id_classe,
+          id_annee_scolaire,
+          statut: "ACTIF",
+        },
+        include: {
+          cours: true,
+          affectations_professeurs: {
+            where: { statut: "ACTIF" },
+            include: { professeurs: true },
+            take: 1,
+          },
+        },
+        orderBy: { cours: { libelle: "asc" } },
+      }),
+      this.prisma.cotes.count({
+        where: {
+          id_titulaire,
+          inscriptions: { id_classe, id_annee_scolaire },
+        },
+      }),
+      this.prisma.periodes.findFirst({
+        where: { id_annee_scolaire, est_ouverte: true, statut: "ACTIF" },
+        orderBy: { numero: "asc" },
+      }),
+    ]);
+
+    return {
+      titular: {
+        name: `${homeroom.professeurs.prenom} ${homeroom.professeurs.nom}`,
+        code: homeroom.code_connexion,
+      },
+      school: {
+        name: homeroom.classes.ecoles.nom_ecole,
+        logo: homeroom.classes.ecoles.logo,
+      },
+      class: {
+        id: id_classe.toString(),
+        name: homeroom.classes.libelle,
+      },
+      schoolYear: homeroom.annees_scolaires.libelle,
+      openPeriod: openPeriod?.libelle ?? null,
+      stats: {
+        students: students.length,
+        courses: courses.length,
+        gradesEntered: gradeCount,
+      },
+      courses: courses.map((item) => ({
+        id: item.id_cours_classe.toString(),
+        name: item.cours.libelle,
+        weight: Number(item.ponderation),
+        teacher: item.affectations_professeurs[0]
+          ? `${item.affectations_professeurs[0].professeurs.nom} ${item.affectations_professeurs[0].professeurs.prenom}`
+          : "Non attribué",
+      })),
+      students: students.slice(0, 8).map((item) => ({
+        id: item.id_inscription.toString(),
+        matricule: item.eleves.matricule,
+        name: `${item.eleves.nom}${item.eleves.postnom ? ` ${item.eleves.postnom}` : ""} ${item.eleves.prenom}`,
+        photo: item.eleves.photo,
+        orderNumber: item.numero_ordre,
+      })),
+    };
+  }
+
+  async getHomeroomGradebook(homeroomId: string) {
+    const id_titulaire = toBigInt(homeroomId);
+    const homeroom = await this.prisma.titulaires.findFirst({
+      where: { id_titulaire, statut_compte: "ACTIF" },
+      include: { classes: true, annees_scolaires: true },
+    });
+    if (!homeroom) throw new NotFoundException("Compte titulaire introuvable.");
+    let period = await this.prisma.periodes.findFirst({
+      where: {
+        id_annee_scolaire: homeroom.id_annee_scolaire,
+        est_ouverte: true,
+        statut: "ACTIF",
+      },
+      orderBy: { numero: "asc" },
+    });
+    if (!period) {
+      const periodCount = await this.prisma.periodes.count({
+        where: { id_annee_scolaire: homeroom.id_annee_scolaire },
+      });
+      if (periodCount === 0) {
+        period = await this.prisma.periodes.create({
+          data: {
+            id_annee_scolaire: homeroom.id_annee_scolaire,
+            libelle: "Période 1",
+            numero: 1,
+            est_ouverte: true,
+          },
+        });
+      }
+    }
+    const [students, courses, grades] = await Promise.all([
+      this.prisma.inscriptions.findMany({
+        where: {
+          id_classe: homeroom.id_classe,
+          id_annee_scolaire: homeroom.id_annee_scolaire,
+          statut: "INSCRIT",
+          eleves: { statut: "ACTIF" },
+        },
+        include: { eleves: true },
+        orderBy: [{ numero_ordre: "asc" }, { eleves: { nom: "asc" } }],
+      }),
+      this.prisma.cours_classes.findMany({
+        where: {
+          id_classe: homeroom.id_classe,
+          id_annee_scolaire: homeroom.id_annee_scolaire,
+          statut: "ACTIF",
+        },
+        include: { cours: true },
+        orderBy: { cours: { libelle: "asc" } },
+      }),
+      period
+        ? this.prisma.cotes.findMany({
+            where: {
+              id_titulaire,
+              id_periode: period.id_periode,
+              inscriptions: {
+                id_classe: homeroom.id_classe,
+                id_annee_scolaire: homeroom.id_annee_scolaire,
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+    return {
+      className: homeroom.classes.libelle,
+      schoolYear: homeroom.annees_scolaires.libelle,
+      period: period
+        ? { id: period.id_periode.toString(), name: period.libelle }
+        : null,
+      students: students.map((item) => ({
+        id: item.id_inscription.toString(),
+        matricule: item.eleves.matricule,
+        name: `${item.eleves.nom}${item.eleves.postnom ? ` ${item.eleves.postnom}` : ""} ${item.eleves.prenom}`,
+        photo: item.eleves.photo,
+        orderNumber: item.numero_ordre,
+      })),
+      courses: courses.map((item) => ({
+        id: item.id_cours_classe.toString(),
+        name: item.cours.libelle,
+        weight: Number(item.ponderation),
+      })),
+      grades: grades.map((item) => ({
+        enrollmentId: item.id_inscription.toString(),
+        courseClassId: item.id_cours_classe.toString(),
+        value: Number(item.cote_obtenue),
+      })),
+    };
+  }
+
+  async saveHomeroomGrades(
+    homeroomId: string,
+    dto: SaveHomeroomGradesDto,
+  ) {
+    const id_titulaire = toBigInt(homeroomId);
+    const homeroom = await this.prisma.titulaires.findFirst({
+      where: { id_titulaire, statut_compte: "ACTIF" },
+    });
+    if (!homeroom) throw new NotFoundException("Compte titulaire introuvable.");
+    const period = await this.prisma.periodes.findFirst({
+      where: {
+        id_annee_scolaire: homeroom.id_annee_scolaire,
+        est_ouverte: true,
+        statut: "ACTIF",
+      },
+    });
+    if (!period) {
+      throw new BadRequestException("Aucune période n’est ouverte pour la saisie.");
+    }
+    const enrollmentIds = [...new Set(dto.grades.map((item) => item.enrollmentId))];
+    const courseClassIds = [...new Set(dto.grades.map((item) => item.courseClassId))];
+    const [enrollments, courses] = await Promise.all([
+      this.prisma.inscriptions.findMany({
+        where: {
+          id_inscription: { in: enrollmentIds.map(toBigInt) },
+          id_classe: homeroom.id_classe,
+          id_annee_scolaire: homeroom.id_annee_scolaire,
+          statut: "INSCRIT",
+        },
+        select: { id_inscription: true },
+      }),
+      this.prisma.cours_classes.findMany({
+        where: {
+          id_cours_classe: { in: courseClassIds.map(toBigInt) },
+          id_classe: homeroom.id_classe,
+          id_annee_scolaire: homeroom.id_annee_scolaire,
+          statut: "ACTIF",
+        },
+        select: { id_cours_classe: true, ponderation: true },
+      }),
+    ]);
+    if (
+      enrollments.length !== enrollmentIds.length ||
+      courses.length !== courseClassIds.length
+    ) {
+      throw new BadRequestException("Un élève ou un cours ne correspond pas à votre classe.");
+    }
+    const weights = new Map(
+      courses.map((item) => [
+        item.id_cours_classe.toString(),
+        Number(item.ponderation),
+      ]),
+    );
+    for (const grade of dto.grades) {
+      if (grade.value > (weights.get(String(grade.courseClassId)) ?? -1)) {
+        throw new BadRequestException(
+          "Une cote saisie dépasse la pondération du cours.",
+        );
+      }
+    }
+    await this.prisma.$transaction(
+      dto.grades.map((grade) =>
+        this.prisma.cotes.upsert({
+          where: {
+            id_inscription_id_cours_classe_id_periode: {
+              id_inscription: toBigInt(grade.enrollmentId),
+              id_cours_classe: toBigInt(grade.courseClassId),
+              id_periode: period.id_periode,
+            },
+          },
+          update: {
+            cote_obtenue: grade.value,
+            id_titulaire,
+            date_mise_a_jour: new Date(),
+          },
+          create: {
+            id_inscription: toBigInt(grade.enrollmentId),
+            id_cours_classe: toBigInt(grade.courseClassId),
+            id_periode: period.id_periode,
+            id_titulaire,
+            cote_obtenue: grade.value,
+          },
+        }),
+      ),
+    );
+    return { saved: dto.grades.length };
   }
 
   private async generateUniqueSchoolCode() {
@@ -412,15 +692,22 @@ export class AcademicService {
     }
   }
 
-  async updateClass(id: string, dto: UpdateClassDto) {
+  async updateClass(id: string, dto: UpdateClassDto, schoolId: string) {
+    const id_classe = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    const existing = await this.prisma.classes.findFirst({
+      where: { id_classe, id_ecole },
+    });
+    if (!existing) throw new NotFoundException("Classe introuvable.");
     try {
-      return await this.prisma.classes.update({
-        where: { id_classe: toBigInt(id) },
+      const updated = await this.prisma.classes.update({
+        where: { id_classe },
         data: {
-          id_ecole: dto.schoolId ? toBigInt(dto.schoolId) : undefined,
           libelle: dto.label.trim(),
+          date_mise_a_jour: new Date(),
         },
       });
+      return { id: updated.id_classe.toString(), label: updated.libelle };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -553,15 +840,21 @@ export class AcademicService {
     }
   }
 
-  async updateCourse(id: string, dto: UpdateCourseDto) {
+  async updateCourse(id: string, dto: UpdateCourseDto, schoolId: string) {
+    const id_cours = toBigInt(id);
+    const existing = await this.prisma.cours.findFirst({
+      where: { id_cours, id_ecole: toBigInt(schoolId) },
+    });
+    if (!existing) throw new NotFoundException("Cours introuvable.");
     try {
-      return await this.prisma.cours.update({
-        where: { id_cours: toBigInt(id) },
+      const updated = await this.prisma.cours.update({
+        where: { id_cours },
         data: {
-          id_ecole: dto.schoolId ? toBigInt(dto.schoolId) : undefined,
           libelle: dto.label.trim(),
+          date_mise_a_jour: new Date(),
         },
       });
+      return { id: updated.id_cours.toString(), label: updated.libelle };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -591,6 +884,9 @@ export class AcademicService {
     });
     return assignments.map((assignment) => ({
       id: assignment.id_affectation_professeur.toString(),
+      teacherId: assignment.id_professeur.toString(),
+      courseId: assignment.cours_classes.id_cours.toString(),
+      classId: assignment.cours_classes.id_classe.toString(),
       teacher: `${assignment.professeurs.nom} ${assignment.professeurs.prenom}`,
       course: assignment.cours_classes.cours.libelle,
       className: assignment.cours_classes.classes.libelle,
@@ -624,6 +920,51 @@ export class AcademicService {
     if (!schoolYear) {
       throw new BadRequestException(
         "Ajoutez d'abord un élève afin d'initialiser l'année scolaire.",
+      );
+    }
+    const existingCourseClass = await this.prisma.cours_classes.findUnique({
+      where: {
+        id_cours_id_classe_id_annee_scolaire: {
+          id_cours,
+          id_classe,
+          id_annee_scolaire: schoolYear.id_annee_scolaire,
+        },
+      },
+      include: {
+        affectations_professeurs: {
+          where: { statut: "ACTIF" },
+          include: { professeurs: true },
+          take: 1,
+        },
+      },
+    });
+    const existingAssignment =
+      existingCourseClass?.affectations_professeurs[0];
+    if (existingAssignment) {
+      throw new ConflictException(
+        `${course.libelle} est déjà attribué à ${existingAssignment.professeurs.nom} ${existingAssignment.professeurs.prenom} dans la classe ${schoolClass.libelle}.`,
+      );
+    }
+
+    const teacherAssignments =
+      await this.prisma.affectations_professeurs.findMany({
+        where: {
+          id_professeur,
+          id_annee_scolaire: schoolYear.id_annee_scolaire,
+          statut: "ACTIF",
+        },
+        select: {
+          cours_classes: { select: { id_classe: true } },
+        },
+      });
+    const teacherClassIds = new Set(
+      teacherAssignments.map((item) =>
+        item.cours_classes.id_classe.toString(),
+      ),
+    );
+    if (!teacherClassIds.has(id_classe.toString()) && teacherClassIds.size >= 2) {
+      throw new BadRequestException(
+        "Ce professeur enseigne déjà dans deux classes différentes.",
       );
     }
     try {
@@ -667,6 +1008,289 @@ export class AcademicService {
     } catch (error) {
       handlePrismaError(error);
     }
+  }
+
+  async updateCourseAssignment(
+    id: string,
+    dto: CreateCourseAssignmentDto,
+    schoolId: string,
+  ) {
+    const id_affectation_professeur = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    const id_classe = toBigInt(dto.classId);
+    const id_cours = toBigInt(dto.courseId);
+    const id_professeur = toBigInt(dto.teacherId);
+    const current = await this.prisma.affectations_professeurs.findFirst({
+      where: {
+        id_affectation_professeur,
+        cours_classes: { classes: { id_ecole } },
+      },
+      include: { cours_classes: { include: { cotes: { take: 1 } } } },
+    });
+    if (!current) throw new NotFoundException("Attribution introuvable.");
+    const [schoolClass, course, teacher] = await Promise.all([
+      this.prisma.classes.findFirst({ where: { id_classe, id_ecole, statut: "ACTIF" } }),
+      this.prisma.cours.findFirst({ where: { id_cours, id_ecole, statut: "ACTIF" } }),
+      this.prisma.professeurs.findFirst({ where: { id_professeur, id_ecole, statut: "ACTIF" } }),
+    ]);
+    if (!schoolClass || !course || !teacher) {
+      throw new BadRequestException("Classe, cours ou professeur invalide.");
+    }
+    const changingCourseClass =
+      current.cours_classes.id_cours !== id_cours ||
+      current.cours_classes.id_classe !== id_classe;
+    if (changingCourseClass && current.cours_classes.cotes.length > 0) {
+      throw new ConflictException(
+        "Cette attribution contient déjà des notes. Le cours ou la classe ne peut plus être changé.",
+      );
+    }
+    const duplicate = await this.prisma.cours_classes.findUnique({
+      where: {
+        id_cours_id_classe_id_annee_scolaire: {
+          id_cours,
+          id_classe,
+          id_annee_scolaire: current.id_annee_scolaire,
+        },
+      },
+      include: {
+        affectations_professeurs: {
+          where: {
+            statut: "ACTIF",
+            id_affectation_professeur: { not: id_affectation_professeur },
+          },
+          take: 1,
+        },
+      },
+    });
+    if (duplicate?.affectations_professeurs.length) {
+      throw new ConflictException(
+        "Ce cours possède déjà un professeur dans cette classe.",
+      );
+    }
+    const otherAssignments = await this.prisma.affectations_professeurs.findMany({
+      where: {
+        id_professeur,
+        id_annee_scolaire: current.id_annee_scolaire,
+        statut: "ACTIF",
+        id_affectation_professeur: { not: id_affectation_professeur },
+      },
+      select: { cours_classes: { select: { id_classe: true } } },
+    });
+    const classIds = new Set(
+      otherAssignments.map((item) => item.cours_classes.id_classe.toString()),
+    );
+    if (!classIds.has(id_classe.toString()) && classIds.size >= 2) {
+      throw new BadRequestException(
+        "Ce professeur enseigne déjà dans deux classes différentes.",
+      );
+    }
+    return this.prisma.$transaction(async (prisma) => {
+      const courseClass = await prisma.cours_classes.upsert({
+        where: {
+          id_cours_id_classe_id_annee_scolaire: {
+            id_cours,
+            id_classe,
+            id_annee_scolaire: current.id_annee_scolaire,
+          },
+        },
+        update: { ponderation: dto.weight, statut: "ACTIF" },
+        create: {
+          id_cours,
+          id_classe,
+          id_annee_scolaire: current.id_annee_scolaire,
+          ponderation: dto.weight,
+        },
+      });
+      await prisma.affectations_professeurs.update({
+        where: { id_affectation_professeur },
+        data: {
+          id_professeur,
+          id_cours_classe: courseClass.id_cours_classe,
+        },
+      });
+      return { id: id_affectation_professeur.toString() };
+    });
+  }
+
+  async listHomeroomAssignments(schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const schoolYear = await this.prisma.annees_scolaires.findFirst({
+      where: { id_ecole, est_active: true },
+      orderBy: { date_debut: "desc" },
+    });
+    if (!schoolYear) return [];
+    const assignments = await this.prisma.titulaires.findMany({
+      where: {
+        id_annee_scolaire: schoolYear.id_annee_scolaire,
+        statut_compte: "ACTIF",
+        classes: { id_ecole },
+      },
+      include: { classes: true, professeurs: true },
+      orderBy: { classes: { libelle: "asc" } },
+    });
+    return assignments.map((item) => ({
+      id: item.id_titulaire.toString(),
+      classId: item.id_classe.toString(),
+      teacherId: item.id_professeur.toString(),
+      className: item.classes.libelle,
+      teacher: `${item.professeurs.nom} ${item.professeurs.prenom}`,
+      loginCode: item.code_connexion,
+    }));
+  }
+
+  private async homeroomContext(
+    dto: CreateHomeroomAssignmentDto,
+    schoolId: string,
+  ) {
+    const id_ecole = toBigInt(schoolId);
+    const id_classe = toBigInt(dto.classId);
+    const id_professeur = toBigInt(dto.teacherId);
+    const [schoolClass, teacher, schoolYear, existingDirector, school] = await Promise.all([
+      this.prisma.classes.findFirst({ where: { id_classe, id_ecole, statut: "ACTIF" } }),
+      this.prisma.professeurs.findFirst({ where: { id_professeur, id_ecole, statut: "ACTIF" } }),
+      this.prisma.annees_scolaires.findFirst({
+        where: { id_ecole, est_active: true },
+        orderBy: { date_debut: "desc" },
+      }),
+      this.prisma.directeurs.findFirst({
+        where: { id_ecole, statut_compte: "ACTIF" },
+        orderBy: { date_creation: "asc" },
+      }),
+      this.prisma.ecoles.findUnique({ where: { id_ecole } }),
+    ]);
+    if (!schoolClass || !teacher) {
+      throw new BadRequestException("Classe ou professeur invalide.");
+    }
+    if (!schoolYear) {
+      throw new BadRequestException("Aucune année scolaire active.");
+    }
+    if (!school) throw new NotFoundException("École introuvable.");
+    const director =
+      existingDirector ??
+      (await this.prisma.directeurs.create({
+        data: {
+          id_ecole,
+          nom: "DIRECTION",
+          prenom: school.nom_ecole.slice(0, 100),
+          code_connexion: `SYS-${school.code_ecole}`.slice(0, 50),
+          mot_de_passe_hash: await bcrypt.hash(generateSchoolPassword(), 12),
+          doit_changer_mot_de_passe: false,
+        },
+      }));
+    return { id_ecole, id_classe, id_professeur, schoolYear, director };
+  }
+
+  async createHomeroomAssignment(
+    dto: CreateHomeroomAssignmentDto,
+    schoolId: string,
+  ) {
+    const context = await this.homeroomContext(dto, schoolId);
+    const existing = await this.prisma.titulaires.findFirst({
+      where: {
+        id_annee_scolaire: context.schoolYear.id_annee_scolaire,
+        statut_compte: "ACTIF",
+        OR: [
+          { id_classe: context.id_classe },
+          { id_professeur: context.id_professeur },
+        ],
+      },
+      include: { classes: true, professeurs: true },
+    });
+    if (existing?.id_classe === context.id_classe) {
+      throw new ConflictException(
+        `${existing.classes.libelle} possède déjà un titulaire.`,
+      );
+    }
+    if (existing) {
+      throw new ConflictException(
+        `${existing.professeurs.nom} ${existing.professeurs.prenom} est déjà titulaire d’une classe.`,
+      );
+    }
+    let code = generateHomeroomCode();
+    while (await this.prisma.titulaires.findUnique({ where: { code_connexion: code } })) {
+      code = generateHomeroomCode();
+    }
+    const temporaryPassword = generateHomeroomPassword();
+    const assignment = await this.prisma.titulaires.create({
+      data: {
+        id_professeur: context.id_professeur,
+        id_classe: context.id_classe,
+        id_annee_scolaire: context.schoolYear.id_annee_scolaire,
+        id_directeur_createur: context.director.id_directeur,
+        code_connexion: code,
+        mot_de_passe_hash: await bcrypt.hash(temporaryPassword, 12),
+      },
+    });
+    return {
+      id: assignment.id_titulaire.toString(),
+      loginCode: code,
+      temporaryPassword,
+    };
+  }
+
+  async updateHomeroomAssignment(
+    id: string,
+    dto: CreateHomeroomAssignmentDto,
+    schoolId: string,
+  ) {
+    const context = await this.homeroomContext(dto, schoolId);
+    const id_titulaire = toBigInt(id);
+    const current = await this.prisma.titulaires.findFirst({
+      where: { id_titulaire, classes: { id_ecole: context.id_ecole } },
+    });
+    if (!current) throw new NotFoundException("Affectation titulaire introuvable.");
+    const conflict = await this.prisma.titulaires.findFirst({
+      where: {
+        id_titulaire: { not: id_titulaire },
+        id_annee_scolaire: context.schoolYear.id_annee_scolaire,
+        statut_compte: "ACTIF",
+        OR: [
+          { id_classe: context.id_classe },
+          { id_professeur: context.id_professeur },
+        ],
+      },
+    });
+    if (conflict) {
+      throw new ConflictException(
+        "Cette classe ou ce professeur possède déjà une affectation titulaire.",
+      );
+    }
+    const updated = await this.prisma.titulaires.update({
+      where: { id_titulaire },
+      data: {
+        id_classe: context.id_classe,
+        id_professeur: context.id_professeur,
+        date_mise_a_jour: new Date(),
+      },
+    });
+    return { id: updated.id_titulaire.toString() };
+  }
+
+  async resetHomeroomPassword(id: string, schoolId: string) {
+    const id_titulaire = toBigInt(id);
+    const assignment = await this.prisma.titulaires.findFirst({
+      where: {
+        id_titulaire,
+        classes: { id_ecole: toBigInt(schoolId) },
+        statut_compte: "ACTIF",
+      },
+    });
+    if (!assignment) {
+      throw new NotFoundException("Affectation titulaire introuvable.");
+    }
+    const temporaryPassword = generateHomeroomPassword();
+    await this.prisma.titulaires.update({
+      where: { id_titulaire },
+      data: {
+        mot_de_passe_hash: await bcrypt.hash(temporaryPassword, 12),
+        doit_changer_mot_de_passe: true,
+        date_mise_a_jour: new Date(),
+      },
+    });
+    return {
+      loginCode: assignment.code_connexion,
+      temporaryPassword,
+    };
   }
 
   async listStudents(schoolId?: string) {

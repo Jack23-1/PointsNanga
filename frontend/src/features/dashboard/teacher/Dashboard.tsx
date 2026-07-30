@@ -1,158 +1,203 @@
-import {
-  Card,
-  Row,
-  Col,
-  Statistic,
-  Typography,
-  Table,
-  Button,
-  Space,
-  Tag,
-  Alert,
-} from "antd";
+import { useEffect, useState } from "react";
 import {
   BookOutlined,
   CheckCircleOutlined,
-  ClockCircleOutlined,
-  EditOutlined,
-  SendOutlined,
+  ReloadOutlined,
+  TeamOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
+import { Avatar, Button, Card, Empty, Skeleton, Table, message } from "antd";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import { api } from "../../../lib/api";
+import { ROUTES } from "../../../config/constants";
+import GradesPage from "../../grades/pages/GradesPage";
 
-const { Title, Text } = Typography;
-
-interface SubjectRecord {
-  total: number;
+interface HomeroomDashboardData {
+  titular: { name: string; code: string };
+  school: { name: string; logo?: string | null };
+  class: { id: string; name: string };
+  schoolYear: string;
+  openPeriod: string | null;
+  stats: { students: number; courses: number; gradesEntered: number };
+  courses: {
+    id: string;
+    name: string;
+    weight: number;
+    teacher: string;
+  }[];
+  students: {
+    id: string;
+    matricule: string;
+    name: string;
+    photo?: string | null;
+    orderNumber?: number | null;
+  }[];
 }
 
+const getErrorMessage = (error: unknown) => {
+  if (!axios.isAxiosError(error)) return "Chargement du tableau de bord impossible.";
+  const value = error.response?.data?.message;
+  return typeof value === "string"
+    ? value
+    : "Chargement du tableau de bord impossible.";
+};
+
 const TeacherDashboard = () => {
-  const columns = [
+  const navigate = useNavigate();
+  const [data, setData] = useState<HomeroomDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadDashboard = async () => {
+    setLoading(true);
+    try {
+      const response =
+        await api.get<HomeroomDashboardData>("/dashboard/homeroom");
+      setData(response.data);
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadDashboard();
+  }, []);
+
+  if (loading && !data) {
+    return (
+      <section className="homeroom-dashboard">
+        <Skeleton active paragraph={{ rows: 12 }} />
+      </section>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <Empty description="Les informations du titulaire sont indisponibles.">
+          <Button onClick={loadDashboard}>Réessayer</Button>
+        </Empty>
+      </Card>
+    );
+  }
+
+  const statCards = [
     {
-      title: "Matière",
-      dataIndex: "subject",
-      key: "subject",
+      label: "Élèves dans ma classe",
+      value: data.stats.students,
+      icon: <TeamOutlined />,
     },
     {
-      title: "Classe",
-      dataIndex: "class",
-      key: "class",
+      label: "Cours de la classe",
+      value: data.stats.courses,
+      icon: <BookOutlined />,
     },
     {
-      title: "Élèves Notés",
-      dataIndex: "graded",
-      key: "graded",
-      render: (graded: number, record: SubjectRecord) => (
-        <Text>
-          {graded} / {record.total}
-        </Text>
-      ),
-    },
-    {
-      title: "Statut",
-      dataIndex: "status",
-      key: "status",
-      render: (status: string) => (
-        <Tag
-          color={
-            status === "completed"
-              ? "green"
-              : status === "in_progress"
-                ? "blue"
-                : "orange"
-          }
-        >
-          {status === "completed"
-            ? "Terminé"
-            : status === "in_progress"
-              ? "En cours"
-              : "Non commencé"}
-        </Tag>
-      ),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      render: () => (
-        <Space>
-          <Button type="link" icon={<EditOutlined />}>
-            Encoder
-          </Button>
-        </Space>
-      ),
+      label: "Notes enregistrées",
+      value: data.stats.gradesEntered,
+      icon: <CheckCircleOutlined />,
     },
   ];
 
-  const subjectData: {
-    key: string;
-    subject: string;
-    class: string;
-    graded: number;
-    total: number;
-    status: string;
-  }[] = [];
-
   return (
-    <div>
-      <Title level={2}>Tableau de bord Enseignant</Title>
-      <Text type="secondary">Gestion des notes et évaluations</Text>
+    <section className="homeroom-dashboard">
+      <header className="homeroom-dashboard__hero">
+        <div>
+          <span>Espace titulaire · {data.schoolYear}</span>
+          <h1>Bienvenue, {data.titular.name}</h1>
+          <p>
+            Vous êtes titulaire de la classe <strong>{data.class.name}</strong>
+            {data.openPeriod
+              ? ` · Période ouverte : ${data.openPeriod}`
+              : " · Aucune période n’est ouverte actuellement"}
+          </p>
+        </div>
+        <Button icon={<ReloadOutlined />} onClick={loadDashboard}>
+          Actualiser
+        </Button>
+      </header>
 
-      <Alert
-        message="Attention"
-        description="Les cours réels apparaîtront après affectation depuis la base."
-        type="warning"
-        showIcon
-        style={{ marginTop: 16 }}
-      />
+      <div className="homeroom-dashboard__stats">
+        {statCards.map((item) => (
+          <Card key={item.label}>
+            <span className="homeroom-dashboard__stat-icon">{item.icon}</span>
+            <div>
+              <strong>{item.value}</strong>
+              <small>{item.label}</small>
+            </div>
+          </Card>
+        ))}
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
-        <Col xs={24} sm={8} md={8} lg={8}>
-          <Card>
-            <Statistic
-              title="Classes Assignées"
-              value={4}
-              prefix={<BookOutlined />}
-              valueStyle={{ color: "#1890ff" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={8} lg={8}>
-          <Card>
-            <Statistic
-              title="Notes Encodées"
-              value={83}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: "#52c41a" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8} md={8} lg={8}>
-          <Card>
-            <Statistic
-              title="En Attente"
-              value={82}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: "#faad14" }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div className="homeroom-dashboard__grid">
+        <Card
+          className="homeroom-dashboard__panel"
+          title="Élèves de la classe"
+          extra={<small>{data.stats.students} inscrits</small>}
+        >
+          <Table
+            rowKey="id"
+            pagination={false}
+            dataSource={data.students}
+            locale={{ emptyText: "Aucun élève inscrit dans cette classe." }}
+            columns={[
+              {
+                title: "Élève",
+                key: "student",
+                render: (_, row) => (
+                  <div className="homeroom-dashboard__student">
+                    <Avatar src={row.photo || undefined} icon={<UserOutlined />} />
+                    <div>
+                      <strong>{row.name}</strong>
+                      <small>{row.matricule}</small>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                title: "N°",
+                dataIndex: "orderNumber",
+                width: 60,
+                render: (value) => value ?? "—",
+              },
+            ]}
+          />
+        </Card>
 
-      <Card
-        title="Mes Classes"
-        style={{ marginTop: 24 }}
-        extra={
-          <Button type="primary" icon={<SendOutlined />}>
-            Soumettre Tout
-          </Button>
-        }
-      >
-        <Table
-          columns={columns}
-          dataSource={subjectData}
-          pagination={false}
-          scroll={{ x: "max-content" }}
-        />
-      </Card>
-    </div>
+        <Card
+          className="homeroom-dashboard__panel"
+          title="Cours de la classe"
+          extra={
+            <Button type="link" onClick={() => navigate(ROUTES.GRADES)}>
+              Gérer les notes
+            </Button>
+          }
+        >
+          <div className="homeroom-dashboard__courses">
+            {data.courses.length === 0 ? (
+              <Empty description="Aucun cours attribué à cette classe." />
+            ) : (
+              data.courses.map((course) => (
+                <div key={course.id}>
+                  <span className="homeroom-dashboard__course-icon">
+                    <BookOutlined />
+                  </span>
+                  <div>
+                    <strong>{course.name}</strong>
+                    <small>{course.teacher}</small>
+                  </div>
+                  <b>{course.weight}</b>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <GradesPage />
+    </section>
   );
 };
 

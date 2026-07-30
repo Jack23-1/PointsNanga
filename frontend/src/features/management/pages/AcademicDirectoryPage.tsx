@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOutlined,
+  EditOutlined,
   PhoneOutlined,
   PlusOutlined,
   ReadOutlined,
+  ReloadOutlined,
   SearchOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -42,6 +44,10 @@ interface DirectoryRow {
   extra: string;
   status: string;
   students?: number;
+  classId?: string;
+  courseId?: string;
+  teacherId?: string;
+  weight?: number;
 }
 
 interface FormValues {
@@ -58,6 +64,26 @@ interface FormValues {
 interface Choice {
   id: string;
   label: string;
+}
+
+interface AssignmentApiRow {
+  id: string;
+  teacherId: string;
+  courseId: string;
+  classId: string;
+  teacher: string;
+  course: string;
+  className: string;
+  weight: number;
+}
+
+interface HomeroomApiRow {
+  id: string;
+  classId: string;
+  teacherId: string;
+  className: string;
+  teacher: string;
+  loginCode: string;
 }
 
 const contentByKind = {
@@ -116,11 +142,17 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const [classes, setClasses] = useState<Choice[]>([]);
   const [courses, setCourses] = useState<Choice[]>([]);
   const [teachers, setTeachers] = useState<Choice[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentApiRow[]>([]);
+  const [homeroomAssignments, setHomeroomAssignments] = useState<
+    HomeroomApiRow[]
+  >([]);
   const [photo, setPhoto] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<DirectoryRow | null>(null);
+  const selectedCourseId = Form.useWatch("courseId", form);
 
   const loadData = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -165,7 +197,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
       } else if (kind === "assignments") {
         const [assignments, classList, courseList, teacherList] =
           await Promise.all([
-            api.get<any[]>("/course-assignments"),
+            api.get<AssignmentApiRow[]>("/course-assignments"),
             api.get<any[]>("/classes"),
             api.get<any[]>("/courses"),
             api.get<any[]>("/teachers"),
@@ -178,13 +210,46 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             detail: item.teacher,
             extra: String(item.weight),
             status: "Actif",
+            classId: item.classId,
+            courseId: item.courseId,
+            teacherId: item.teacherId,
+            weight: item.weight,
           })),
         );
+        setAssignments(assignments.data);
         setClasses(
           classList.data.map((item) => ({ id: item.id, label: item.label })),
         );
         setCourses(
           courseList.data.map((item) => ({ id: item.id, label: item.label })),
+        );
+        setTeachers(
+          teacherList.data.map((item) => ({
+            id: item.id,
+            label: `${item.lastName} ${item.firstName}`,
+          })),
+        );
+      } else if (kind === "homeroom") {
+        const [assignmentList, classList, teacherList] = await Promise.all([
+          api.get<HomeroomApiRow[]>("/homeroom-assignments"),
+          api.get<any[]>("/classes"),
+          api.get<any[]>("/teachers"),
+        ]);
+        setHomeroomAssignments(assignmentList.data);
+        setRows(
+          assignmentList.data.map((item) => ({
+            key: item.id,
+            primary: item.teacher,
+            secondary: item.loginCode,
+            detail: item.className,
+            extra: "",
+            status: "Actif",
+            classId: item.classId,
+            teacherId: item.teacherId,
+          })),
+        );
+        setClasses(
+          classList.data.map((item) => ({ id: item.id, label: item.label })),
         );
         setTeachers(
           teacherList.data.map((item) => ({
@@ -218,12 +283,77 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     );
   }, [rows, search]);
 
+  const assignmentByClass = useMemo(() => {
+    const result = new Map<string, AssignmentApiRow>();
+    if (!selectedCourseId) return result;
+    assignments
+      .filter(
+        (item) =>
+          item.courseId === String(selectedCourseId) &&
+          item.id !== editingRow?.key,
+      )
+      .forEach((item) => result.set(item.classId, item));
+    return result;
+  }, [assignments, editingRow, selectedCourseId]);
+
+  const occupiedHomeroomClasses = useMemo(
+    () =>
+      new Set(
+        homeroomAssignments
+          .filter((item) => item.id !== editingRow?.key)
+          .map((item) => item.classId),
+      ),
+    [editingRow, homeroomAssignments],
+  );
+  const occupiedHomeroomTeachers = useMemo(
+    () =>
+      new Set(
+        homeroomAssignments
+          .filter((item) => item.id !== editingRow?.key)
+          .map((item) => item.teacherId),
+      ),
+    [editingRow, homeroomAssignments],
+  );
+
+  const openCreate = () => {
+    setEditingRow(null);
+    setPhoto(null);
+    form.resetFields();
+    setIsModalOpen(true);
+  };
+
+  const openEdit = (row: DirectoryRow) => {
+    setEditingRow(row);
+    if (kind === "assignments") {
+      form.setFieldsValue({
+        courseId: row.courseId,
+        classId: row.classId,
+        teacherId: row.teacherId,
+        weight: row.weight,
+      });
+    } else if (kind === "homeroom") {
+      form.setFieldsValue({
+        classId: row.classId,
+        teacherId: row.teacherId,
+      });
+    } else {
+      form.setFieldsValue({ name: row.primary });
+    }
+    setIsModalOpen(true);
+  };
+
   const save = async () => {
     const values = await form.validateFields();
     setIsSaving(true);
     try {
       if (kind === "classes") {
-        await api.post("/classes", { label: values.name });
+        if (editingRow) {
+          await api.patch(`/classes/${editingRow.key}`, {
+            label: values.name,
+          });
+        } else {
+          await api.post("/classes", { label: values.name });
+        }
       } else if (kind === "teachers") {
         await api.post("/teachers", {
           lastName: values.name,
@@ -233,23 +363,74 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           photo,
         });
       } else if (kind === "courses") {
-        await api.post("/courses", { label: values.name });
+        if (editingRow) {
+          await api.patch(`/courses/${editingRow.key}`, {
+            label: values.name,
+          });
+        } else {
+          await api.post("/courses", { label: values.name });
+        }
       } else if (kind === "assignments") {
-        await api.post("/course-assignments", {
+        const payload = {
           classId: Number(values.classId),
           courseId: Number(values.courseId),
           teacherId: Number(values.teacherId),
           weight: values.weight,
-        });
+        };
+        if (editingRow) {
+          await api.patch(`/course-assignments/${editingRow.key}`, payload);
+        } else {
+          await api.post("/course-assignments", payload);
+        }
+      } else if (kind === "homeroom") {
+        const payload = {
+          classId: Number(values.classId),
+          teacherId: Number(values.teacherId),
+        };
+        if (editingRow) {
+          await api.patch(`/homeroom-assignments/${editingRow.key}`, payload);
+        } else {
+          const response = await api.post<{
+            loginCode: string;
+            temporaryPassword: string;
+          }>("/homeroom-assignments", payload);
+          Modal.success({
+            title: "Titulaire affecté avec succès",
+            className: "academic-directory__credentials-modal",
+            centered: true,
+            width: 440,
+            content: (
+              <div className="academic-directory__credentials">
+                <p>
+                  Communiquez ces accès au professeur. Le mot de passe ne sera
+                  plus affiché ensuite.
+                </p>
+                <div>
+                  <span>Code de connexion</span>
+                  <strong>{response.data.loginCode}</strong>
+                </div>
+                <div>
+                  <span>Mot de passe temporaire</span>
+                  <strong>{response.data.temporaryPassword}</strong>
+                </div>
+              </div>
+            ),
+            okText: "J’ai noté les accès",
+          });
+        }
       } else {
-        message.info("Le module Titulaires sera configuré séparément.");
         return;
       }
       await loadData();
       form.resetFields();
       setPhoto(null);
+      setEditingRow(null);
       setIsModalOpen(false);
-      message.success("Enregistrement effectué avec succès.");
+      message.success(
+        editingRow
+          ? "Modification enregistrée avec succès."
+          : "Enregistrement effectué avec succès.",
+      );
     } catch (error) {
       message.error(errorMessage(error, "Enregistrement impossible."));
     } finally {
@@ -257,11 +438,74 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     }
   };
 
+  const showHomeroomCredentials = (
+    loginCode: string,
+    temporaryPassword: string,
+    title: string,
+  ) => {
+    Modal.success({
+      title,
+      className: "academic-directory__credentials-modal",
+      centered: true,
+      width: 440,
+      content: (
+        <div className="academic-directory__credentials">
+          <p>
+            Communiquez ces accès au professeur. Le mot de passe ne sera plus
+            affiché ensuite.
+          </p>
+          <div>
+            <span>Code de connexion</span>
+            <strong>{loginCode}</strong>
+          </div>
+          <div>
+            <span>Mot de passe temporaire</span>
+            <strong>{temporaryPassword}</strong>
+          </div>
+        </div>
+      ),
+      okText: "J’ai noté les accès",
+    });
+  };
+
+  const resetHomeroomPassword = (row: DirectoryRow) => {
+    Modal.confirm({
+      title: "Réinitialiser le mot de passe ?",
+      content:
+        `Un nouveau mot de passe temporaire sera créé pour ${row.primary}. ` +
+        "L’ancien mot de passe ne fonctionnera plus.",
+      okText: "Réinitialiser",
+      cancelText: "Annuler",
+      centered: true,
+      className: "academic-directory__confirm-modal",
+      async onOk() {
+        try {
+          const response = await api.post<{
+            loginCode: string;
+            temporaryPassword: string;
+          }>(`/homeroom-assignments/${row.key}/reset-password`);
+          showHomeroomCredentials(
+            response.data.loginCode,
+            response.data.temporaryPassword,
+            "Nouveau mot de passe généré",
+          );
+        } catch (error) {
+          message.error(
+            errorMessage(error, "Réinitialisation du mot de passe impossible."),
+          );
+          throw error;
+        }
+      },
+    });
+  };
+
   const columns = [
     {
       title:
         kind === "teachers"
           ? "Professeur"
+          : kind === "homeroom"
+            ? "Titulaire"
           : kind === "classes"
             ? "Classe"
             : "Cours",
@@ -275,21 +519,29 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           )}
           <div>
             <strong>{row.primary}</strong>
-            <small>{row.secondary}</small>
+            {!["courses", "classes"].includes(kind) && (
+              <small>{row.secondary}</small>
+            )}
           </div>
         </div>
       ),
     },
-    {
-      title:
-        kind === "assignments"
-          ? "Professeur"
-          : kind === "teachers"
-            ? "Contact"
-            : "Informations",
-      dataIndex: "detail",
-      key: "detail",
-    },
+    ...(!["courses", "classes"].includes(kind)
+      ? [
+          {
+            title:
+              kind === "assignments"
+                ? "Professeur"
+                : kind === "homeroom"
+                  ? "Classe"
+                : kind === "teachers"
+                  ? "Contact"
+                  : "Informations",
+            dataIndex: "detail",
+            key: "detail",
+          },
+        ]
+      : []),
     ...(kind === "assignments"
       ? [
           {
@@ -297,6 +549,37 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             dataIndex: "extra",
             key: "weight",
             render: (value: string) => <strong>{value}</strong>,
+          },
+        ]
+      : []),
+    ...(["classes", "courses", "assignments", "homeroom"].includes(kind)
+      ? [
+          {
+            title: "Actions",
+            key: "actions",
+            width: kind === "homeroom" ? 240 : 110,
+            align: "right" as const,
+            render: (_: unknown, row: DirectoryRow) => (
+              <div className="academic-directory__row-actions">
+                <Button
+                  type="text"
+                  icon={<EditOutlined />}
+                  onClick={() => openEdit(row)}
+                  aria-label={`Modifier ${row.primary}`}
+                >
+                  Modifier
+                </Button>
+                {kind === "homeroom" && (
+                  <Button
+                    type="text"
+                    icon={<ReloadOutlined />}
+                    onClick={() => resetHomeroomPassword(row)}
+                  >
+                    Réinitialiser
+                  </Button>
+                )}
+              </div>
+            ),
           },
         ]
       : []),
@@ -309,6 +592,8 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
         ? ["Cours actifs", "Cours attribués", "Non attribués", "Total"]
         : kind === "assignments"
           ? ["Attributions", "Cours couverts", "Professeurs", "Classes"]
+          : kind === "homeroom"
+            ? ["Titulaires", "Classes couvertes", "Professeurs", "Sans titulaire"]
           : ["Classes actives", "Élèves répartis", "Classes occupées", "Total"];
   const statValues =
     kind === "teachers"
@@ -325,6 +610,13 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             new Set(rows.map((row) => row.detail)).size,
             new Set(rows.map((row) => row.secondary)).size,
           ]
+        : kind === "homeroom"
+          ? [
+              rows.length,
+              new Set(rows.map((row) => row.detail)).size,
+              rows.length,
+              Math.max(classes.length - rows.length, 0),
+            ]
         : kind === "classes"
           ? [
               rows.length,
@@ -346,7 +638,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setIsModalOpen(true)}
+          onClick={openCreate}
         >
           {content.addLabel}
         </Button>
@@ -394,7 +686,17 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           <div className="academic-directory__modal-title">
             <span>{content.icon}</span>
             <div>
-              <strong>{content.addLabel}</strong>
+              <strong>
+                {editingRow
+                  ? kind === "assignments"
+                    ? "Modifier l’attribution"
+                    : kind === "homeroom"
+                      ? "Modifier le titulaire"
+                    : kind === "classes"
+                      ? "Modifier la classe"
+                      : "Modifier le cours"
+                  : content.addLabel}
+              </strong>
             </div>
           </div>
         }
@@ -402,11 +704,12 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
         onCancel={() => {
           setIsModalOpen(false);
           setPhoto(null);
+          setEditingRow(null);
           form.resetFields();
         }}
         onOk={save}
         confirmLoading={isSaving}
-        okText="Enregistrer"
+        okText={editingRow ? "Enregistrer les modifications" : "Enregistrer"}
         cancelText="Annuler"
         className="academic-directory__modal"
       >
@@ -524,14 +827,16 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
               <Row gutter={14}>
                 <Col span={12}>
                   <Form.Item
-                    name="classId"
-                    label="Classe"
-                    rules={[{ required: true, message: "Choisissez la classe." }]}
+                    name="courseId"
+                    label="Cours"
+                    rules={[{ required: true, message: "Choisissez le cours." }]}
                   >
                     <Select
                       showSearch
                       optionFilterProp="label"
-                      options={classes.map((item) => ({
+                      placeholder="Sélectionner un cours"
+                      onChange={() => form.setFieldValue("classId", undefined)}
+                      options={courses.map((item) => ({
                         value: item.id,
                         label: item.label,
                       }))}
@@ -540,17 +845,40 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                 </Col>
                 <Col span={12}>
                   <Form.Item
-                    name="courseId"
-                    label="Cours"
-                    rules={[{ required: true, message: "Choisissez le cours." }]}
+                    name="classId"
+                    label="Classe"
+                    rules={[{ required: true, message: "Choisissez la classe." }]}
                   >
                     <Select
                       showSearch
                       optionFilterProp="label"
-                      options={courses.map((item) => ({
-                        value: item.id,
-                        label: item.label,
-                      }))}
+                      disabled={!selectedCourseId}
+                      placeholder={
+                        selectedCourseId
+                          ? "Sélectionner une classe"
+                          : "Choisissez d’abord un cours"
+                      }
+                      options={classes.map((item) => {
+                        const existing = assignmentByClass.get(item.id);
+                        return {
+                          value: item.id,
+                          label: item.label,
+                          disabled: Boolean(existing),
+                        };
+                      })}
+                      optionRender={(option) => {
+                        const existing = assignmentByClass.get(
+                          String(option.value),
+                        );
+                        return (
+                          <div className="academic-directory__assignment-option">
+                            <span>{String(option.label)}</span>
+                            {existing && (
+                              <small>Déjà attribué à {existing.teacher}</small>
+                            )}
+                          </div>
+                        );
+                      }}
                     />
                   </Form.Item>
                 </Col>
@@ -590,7 +918,50 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           )}
 
           {kind === "homeroom" && (
-            <p>Le module Titulaires sera configuré à l’étape suivante.</p>
+            <Row gutter={14}>
+              <Col span={12}>
+                <Form.Item
+                  name="classId"
+                  label="Classe"
+                  rules={[{ required: true, message: "Choisissez la classe." }]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Sélectionner une classe"
+                    options={classes.map((item) => ({
+                      value: item.id,
+                      label: occupiedHomeroomClasses.has(item.id)
+                        ? `${item.label} — déjà attribuée`
+                        : item.label,
+                      disabled: occupiedHomeroomClasses.has(item.id),
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="teacherId"
+                  label="Professeur titulaire"
+                  rules={[
+                    { required: true, message: "Choisissez le professeur." },
+                  ]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Sélectionner un professeur"
+                    options={teachers.map((item) => ({
+                      value: item.id,
+                      label: occupiedHomeroomTeachers.has(item.id)
+                        ? `${item.label} — déjà titulaire`
+                        : item.label,
+                      disabled: occupiedHomeroomTeachers.has(item.id),
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
           )}
         </Form>
       </Modal>

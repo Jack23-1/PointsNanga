@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsArray,
   IsDateString,
   IsEmail,
   IsIn,
@@ -10,7 +11,9 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateSchoolDto {
   @IsString()
@@ -216,6 +219,37 @@ export class CreateCourseAssignmentDto {
   @IsNumber()
   @Min(0.01)
   weight: number;
+}
+
+export class CreateHomeroomAssignmentDto {
+  @IsInt()
+  @Min(1)
+  classId: number;
+
+  @IsInt()
+  @Min(1)
+  teacherId: number;
+}
+
+export class HomeroomGradeDto {
+  @IsInt()
+  @Min(1)
+  enrollmentId: number;
+
+  @IsInt()
+  @Min(1)
+  courseClassId: number;
+
+  @IsNumber()
+  @Min(0)
+  value: number;
+}
+
+export class SaveHomeroomGradesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HomeroomGradeDto)
+  grades: HomeroomGradeDto[];
 }
 
 export class CreateSchoolYearDto {

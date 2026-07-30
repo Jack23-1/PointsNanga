@@ -8,11 +8,13 @@ import {
   CreateClassDto,
   CreateCourseDto,
   CreateCourseAssignmentDto,
+  CreateHomeroomAssignmentDto,
   CreateOptionDto,
   CreateSchoolYearDto,
   CreateStudentDto,
   CreateTeacherDto,
   DeleteStudentDto,
+  SaveHomeroomGradesDto,
   UpdateClassDto,
   UpdateCourseDto,
   UpdateOptionDto,
@@ -39,6 +41,32 @@ export class AcademicController {
     }
 
     return this.academicService.getDirectorDashboard(String(schoolId));
+  }
+
+  @Get("dashboard/homeroom")
+  @Roles("teacher")
+  homeroomDashboard(@Req() request: { user?: { sub?: string | number } }) {
+    if (!request.user?.sub) {
+      throw new ForbiddenException("Session titulaire invalide.");
+    }
+    return this.academicService.getHomeroomDashboard(String(request.user.sub));
+  }
+
+  @Get("grades/homeroom")
+  @Roles("teacher")
+  homeroomGradebook(@Req() request: { user?: { sub?: string | number } }) {
+    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.getHomeroomGradebook(String(request.user.sub));
+  }
+
+  @Patch("grades/homeroom")
+  @Roles("teacher")
+  saveHomeroomGrades(
+    @Req() request: { user?: { sub?: string | number } },
+    @Body() dto: SaveHomeroomGradesDto,
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.saveHomeroomGrades(String(request.user.sub), dto);
   }
 
   @Get("options")
@@ -96,8 +124,13 @@ export class AcademicController {
   }
 
   @Patch("classes/:id")
-  updateClass(@Param("id") id: string, @Body() dto: UpdateClassDto) {
-    return this.academicService.updateClass(id, dto);
+  updateClass(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: UpdateClassDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateClass(id, dto, String(request.user.schoolId));
   }
 
   @Delete("classes/:id")
@@ -152,8 +185,13 @@ export class AcademicController {
   }
 
   @Patch("courses/:id")
-  updateCourse(@Param("id") id: string, @Body() dto: UpdateCourseDto) {
-    return this.academicService.updateCourse(id, dto);
+  updateCourse(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: UpdateCourseDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateCourse(id, dto, String(request.user.schoolId));
   }
 
   @Delete("courses/:id")
@@ -176,6 +214,52 @@ export class AcademicController {
   ) {
     if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
     return this.academicService.createCourseAssignment(dto, String(request.user.schoolId));
+  }
+
+  @Patch("course-assignments/:id")
+  updateCourseAssignment(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: CreateCourseAssignmentDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateCourseAssignment(id, dto, String(request.user.schoolId));
+  }
+
+  @Get("homeroom-assignments")
+  listHomeroomAssignments(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listHomeroomAssignments(String(request.user.schoolId));
+  }
+
+  @Post("homeroom-assignments")
+  createHomeroomAssignment(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: CreateHomeroomAssignmentDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createHomeroomAssignment(dto, String(request.user.schoolId));
+  }
+
+  @Patch("homeroom-assignments/:id")
+  updateHomeroomAssignment(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: CreateHomeroomAssignmentDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateHomeroomAssignment(id, dto, String(request.user.schoolId));
+  }
+
+  @Post("homeroom-assignments/:id/reset-password")
+  resetHomeroomPassword(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.resetHomeroomPassword(id, String(request.user.schoolId));
   }
 
   @Get("students")
