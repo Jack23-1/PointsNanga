@@ -5,6 +5,7 @@ import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
 import * as nodemailer from "nodemailer";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeStudentMatricule } from "../students/student-matricule";
 import { LoginDto } from "./dto/login.dto";
 
 @Injectable()
@@ -306,9 +307,10 @@ export class AuthService {
       throw new BadRequestException("Matricule obligatoire.");
     }
 
+    const normalizedMatricule = normalizeStudentMatricule(loginDto.matricule);
     const student = await this.prisma.eleves.findFirst({
       where: {
-        matricule: loginDto.matricule.trim(),
+        matricule: normalizedMatricule,
         ...(loginDto.schoolName
           ? { ecoles: { nom_ecole: loginDto.schoolName } }
           : {}),
@@ -325,7 +327,9 @@ export class AuthService {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 
-    if (student.matricule !== loginDto.password) {
+    if (
+      student.matricule !== normalizeStudentMatricule(loginDto.password)
+    ) {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 

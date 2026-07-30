@@ -8,17 +8,17 @@ datasource db {
 }
 
 model SuperAdmin {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  firstName    String   @map("first_name")
-  lastName     String   @map("last_name")
-  isActive     Boolean  @default(true) @map("is_active")
-  hasFullAccess Boolean @default(false) @map("has_full_access")
-  resetTokenHash String? @unique @map("reset_token_hash")
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String    @map("password_hash")
+  firstName           String    @map("first_name")
+  lastName            String    @map("last_name")
+  isActive            Boolean   @default(true) @map("is_active")
+  hasFullAccess       Boolean   @default(false) @map("has_full_access")
+  resetTokenHash      String?   @unique @map("reset_token_hash")
   resetTokenExpiresAt DateTime? @map("reset_token_expires_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("superadmin")
 }
@@ -83,7 +83,6 @@ model annees_scolaires {
 model classes {
   id_classe         BigInt             @id @default(autoincrement())
   id_ecole          BigInt
-  id_niveau         BigInt
   id_option         BigInt?
   libelle           String             @db.VarChar(150)
   code_classe       String             @db.VarChar(30)
@@ -92,7 +91,6 @@ model classes {
   date_creation     DateTime           @default(now()) @db.Timestamptz(6)
   date_mise_a_jour  DateTime           @default(now()) @db.Timestamptz(6)
   ecoles            ecoles             @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_classe_ecole")
-  niveaux           niveaux            @relation(fields: [id_niveau], references: [id_niveau], onUpdate: NoAction, map: "fk_classe_niveau")
   options_scolaires options_scolaires? @relation(fields: [id_option], references: [id_option], onDelete: Restrict, onUpdate: NoAction, map: "fk_classe_option")
   cours_classes     cours_classes[]
   inscriptions      inscriptions[]
@@ -100,7 +98,6 @@ model classes {
 
   @@unique([id_ecole, code_classe], map: "uq_classe_code")
   @@index([id_ecole], map: "idx_classes_ecole")
-  @@index([id_niveau], map: "idx_classes_niveau")
   @@index([id_option], map: "idx_classes_option")
 }
 
@@ -207,7 +204,6 @@ model ecoles {
   cours                   cours[]
   directeurs              directeurs[]
   eleves                  eleves[]
-  niveaux                 niveaux[]
   options_scolaires       options_scolaires[]
   professeurs             professeurs[]
 }
@@ -215,7 +211,7 @@ model ecoles {
 model eleves {
   id_eleve         BigInt         @id @default(autoincrement())
   id_ecole         BigInt
-  matricule        String         @db.VarChar(50)
+  matricule        String         @unique(map: "uq_eleve_matricule") @db.VarChar(50)
   nom              String         @db.VarChar(100)
   postnom          String?        @db.VarChar(100)
   prenom           String         @db.VarChar(100)
@@ -225,14 +221,13 @@ model eleves {
   adresse          String?        @db.VarChar(255)
   nom_tuteur       String?        @db.VarChar(200)
   telephone_tuteur String?        @db.VarChar(30)
-  photo            String?        @db.VarChar(255)
+  photo            String?
   statut           statut_general @default(ACTIF)
   date_creation    DateTime       @default(now()) @db.Timestamptz(6)
   date_mise_a_jour DateTime       @default(now()) @db.Timestamptz(6)
   ecoles           ecoles         @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_eleve_ecole")
   inscriptions     inscriptions[]
 
-  @@unique([id_ecole, matricule], map: "uq_eleve_matricule")
   @@index([id_ecole], map: "idx_eleves_ecole")
   @@index([nom, postnom, prenom], map: "idx_eleves_nom")
 }
@@ -261,22 +256,6 @@ model inscriptions {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model niveaux {
-  id_niveau        BigInt         @id @default(autoincrement())
-  id_ecole         BigInt
-  libelle          String         @db.VarChar(100)
-  ordre            Int
-  description      String?
-  statut           statut_general @default(ACTIF)
-  date_creation    DateTime       @default(now()) @db.Timestamptz(6)
-  date_mise_a_jour DateTime       @default(now()) @db.Timestamptz(6)
-  classes          classes[]
-  ecoles           ecoles         @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_niveau_ecole")
-
-  @@unique([id_ecole, libelle], map: "uq_niveau_libelle")
-  @@unique([id_ecole, ordre], map: "uq_niveau_ordre")
-}
-
 model options_scolaires {
   id_option        BigInt         @id @default(autoincrement())
   id_ecole         BigInt

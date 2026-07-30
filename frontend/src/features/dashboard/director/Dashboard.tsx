@@ -52,7 +52,6 @@ interface DirectorDashboardData {
     id: string;
     name: string;
     code: string;
-    level: string;
     option: string | null;
     capacity: number | null;
     students: number;
@@ -262,24 +261,11 @@ const DirectorDashboard = () => {
                 ),
               },
               {
-                title: "Niveau",
-                dataIndex: "level",
-                render: (level: string, record) => (
-                  <div className="director-class-level">
-                    <span>{level}</span>
-                    {record.option && <small>{record.option}</small>}
-                  </div>
-                ),
-              },
-              {
                 title: "Effectif",
                 dataIndex: "students",
-                render: (students: number, record) => (
+                render: (students: number) => (
                   <div className="director-class-capacity">
                     <strong>{students} élève{students !== 1 ? "s" : ""}</strong>
-                    {record.capacity && (
-                      <small>Capacité : {record.capacity}</small>
-                    )}
                   </div>
                 ),
               },

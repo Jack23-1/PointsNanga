@@ -76,8 +76,8 @@ class ApiClient {
     return this.client.patch<T>(url, data);
   }
 
-  public delete<T>(url: string) {
-    return this.client.delete<T>(url);
+  public delete<T>(url: string, data?: unknown) {
+    return this.client.delete<T>(url, { data });
   }
 }
 

@@ -7,14 +7,13 @@ import {
   AssignStudentDto,
   CreateClassDto,
   CreateCourseDto,
-  CreateLevelDto,
   CreateOptionDto,
   CreateSchoolYearDto,
   CreateStudentDto,
   CreateTeacherDto,
+  DeleteStudentDto,
   UpdateClassDto,
   UpdateCourseDto,
-  UpdateLevelDto,
   UpdateOptionDto,
   UpdateStudentDto,
   UpdateTeacherDto,
@@ -41,29 +40,16 @@ export class AcademicController {
     return this.academicService.getDirectorDashboard(String(schoolId));
   }
 
-  @Get("levels")
-  listLevels(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listLevels(schoolId);
-  }
-
-  @Post("levels")
-  createLevel(@Body() dto: CreateLevelDto) {
-    return this.academicService.createLevel(dto);
-  }
-
-  @Patch("levels/:id")
-  updateLevel(@Param("id") id: string, @Body() dto: UpdateLevelDto) {
-    return this.academicService.updateLevel(id, dto);
-  }
-
-  @Delete("levels/:id")
-  deleteLevel(@Param("id") id: string) {
-    return this.academicService.deleteLevel(id);
-  }
-
   @Get("options")
-  listOptions(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listOptions(schoolId);
+  listOptions(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    return this.academicService.listOptions(
+      request.user?.role === "director"
+        ? String(request.user.schoolId)
+        : schoolId,
+    );
   }
 
   @Post("options")
@@ -82,13 +68,30 @@ export class AcademicController {
   }
 
   @Get("classes")
-  listClasses(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listClasses(schoolId);
+  listClasses(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    return this.academicService.listClasses(
+      request.user?.role === "director"
+        ? String(request.user.schoolId)
+        : schoolId,
+    );
   }
 
   @Post("classes")
-  createClass(@Body() dto: CreateClassDto) {
-    return this.academicService.createClass(dto);
+  createClass(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateClassDto,
+  ) {
+    const schoolId =
+      request.user?.role === "director"
+        ? request.user.schoolId
+        : dto.schoolId;
+    if (!schoolId) {
+      throw new ForbiddenException("École obligatoire.");
+    }
+    return this.academicService.createClass(dto, String(schoolId));
   }
 
   @Patch("classes/:id")
@@ -142,23 +145,68 @@ export class AcademicController {
   }
 
   @Get("students")
-  listStudents(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listStudents(schoolId);
+  listStudents(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    return this.academicService.listStudents(
+      request.user?.role === "director"
+        ? String(request.user.schoolId)
+        : schoolId,
+    );
   }
 
   @Post("students")
-  createStudent(@Body() dto: CreateStudentDto) {
-    return this.academicService.createStudent(dto);
+  createStudent(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateStudentDto,
+  ) {
+    const schoolId =
+      request.user?.role === "director"
+        ? request.user.schoolId
+        : dto.schoolId;
+    if (!schoolId) {
+      throw new ForbiddenException("École obligatoire.");
+    }
+    return this.academicService.createStudent(dto, String(schoolId));
   }
 
   @Patch("students/:id")
-  updateStudent(@Param("id") id: string, @Body() dto: UpdateStudentDto) {
-    return this.academicService.updateStudent(id, dto);
+  updateStudent(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: UpdateStudentDto,
+  ) {
+    const schoolId =
+      request.user?.role === "director"
+        ? request.user.schoolId
+        : dto.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateStudent(id, dto, String(schoolId));
   }
 
   @Delete("students/:id")
-  deleteStudent(@Param("id") id: string) {
-    return this.academicService.deleteStudent(id);
+  deleteStudent(
+    @Req() request: { user?: { sub?: string; role?: string; schoolId?: string | number } },
+    @Param("id") id: string,
+    @Query("schoolId") schoolId?: string,
+    @Body() dto?: DeleteStudentDto,
+  ) {
+    const resolvedSchoolId =
+      request.user?.role === "director"
+        ? request.user.schoolId
+        : schoolId;
+    if (!resolvedSchoolId) throw new ForbiddenException("École obligatoire.");
+    if (request.user?.role === "director" && (!request.user.sub || !dto?.password)) {
+      throw new ForbiddenException("Mot de passe obligatoire.");
+    }
+    return this.academicService.deleteStudent(
+      id,
+      String(resolvedSchoolId),
+      request.user?.role === "director"
+        ? { directorId: request.user.sub!, password: dto!.password }
+        : undefined,
+    );
   }
 
   @Post("school-years")

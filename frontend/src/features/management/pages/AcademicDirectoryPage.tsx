@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BookOutlined,
   ClockCircleOutlined,
@@ -13,6 +13,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Col, Form, Input, Modal, Row, Select, Table, Tag, message } from "antd";
+import { api } from "../../../lib/api";
 
 type DirectoryKind = "classes" | "teachers" | "courses" | "homeroom" | "assignments";
 
@@ -24,6 +25,8 @@ interface DirectoryRow {
   category: string;
   count: string;
   status: "Actif" | "Complet" | "Disponible";
+  capacity?: number;
+  students?: number;
 }
 
 interface DirectoryFormValues {
@@ -35,25 +38,36 @@ interface DirectoryFormValues {
   category: string;
   count: string;
   secondary: string;
+  capacity?: number;
+}
+
+interface ClassApiRow {
+  id: string;
+  label: string;
+  code: string;
+  capacity: number | null;
+  students: number;
+  option?: string | null;
+  isActive: boolean;
 }
 
 const directoryContent = {
   classes: {
-    eyebrow: "Registre académique officiel",
-    title: "Répertoire des classes",
+    eyebrow: "Gestion scolaire",
+    title: "Classes",
     description: "Organisation des classes, effectifs et titulaires de l’établissement.",
     icon: <TeamOutlined />,
     addLabel: "Ajouter une classe",
     search: "Rechercher une classe ou un titulaire...",
     categoryLabel: "Niveau",
     countLabel: "Effectif",
-    options: ["Tous les niveaux", "6ème", "5ème", "4ème"],
+    options: ["Toutes les classes"],
     stats: [["0", "Classes actives"], ["0", "Élèves répartis"], ["0", "Élèves par classe"], ["0%", "Capacité utilisée"]],
     rows: [],
   },
   teachers: {
-    eyebrow: "Corps professoral officiel",
-    title: "Répertoire des professeurs",
+    eyebrow: "Gestion scolaire",
+    title: "Professeurs",
     description: "Dossiers, affectations et disponibilité du personnel enseignant.",
     icon: <UserOutlined />,
     addLabel: "Ajouter un professeur",
@@ -65,8 +79,8 @@ const directoryContent = {
     rows: [],
   },
   courses: {
-    eyebrow: "Programme d’enseignement officiel",
-    title: "Catalogue des cours",
+    eyebrow: "Gestion scolaire",
+    title: "Cours",
     description: "Matières enseignées, volumes horaires et niveaux concernés.",
     icon: <ReadOutlined />,
     addLabel: "Ajouter un cours",
@@ -78,8 +92,8 @@ const directoryContent = {
     rows: [],
   },
   homeroom: {
-    eyebrow: "Encadrement pédagogique officiel",
-    title: "Gestion des titulaires",
+    eyebrow: "Gestion scolaire",
+    title: "Titulaires",
     description: "Affectation des professeurs titulaires et suivi des classes encadrées.",
     icon: <TeamOutlined />,
     addLabel: "Affecter un titulaire",
@@ -91,7 +105,7 @@ const directoryContent = {
     rows: [],
   },
   assignments: {
-    eyebrow: "Planification pédagogique officielle",
+    eyebrow: "Gestion scolaire",
     title: "Attributions des cours",
     description: "Répartition officielle des cours entre professeurs, classes et volumes horaires.",
     icon: <ReadOutlined />,
@@ -110,18 +124,53 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(content.options[0] as string);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [form] = Form.useForm<DirectoryFormValues>();
+  const [rows, setRows] = useState<DirectoryRow[]>([]);
 
-  const [rows] = useState<DirectoryRow[]>([]);
+  const loadClasses = async (showLoading = false) => {
+    if (kind !== "classes") return;
+    if (showLoading) setIsLoading(true);
+    try {
+      const classesResponse = await api.get<ClassApiRow[]>("/classes");
+      setRows(
+        classesResponse.data.map((schoolClass) => ({
+          key: schoolClass.id,
+          primary: schoolClass.label,
+          secondary: schoolClass.option || "Sans option",
+          code: schoolClass.code,
+          category: "",
+          count: String(schoolClass.students),
+          capacity: schoolClass.capacity ?? undefined,
+          students: schoolClass.students,
+          status: schoolClass.isActive ? "Actif" : "Disponible",
+        })),
+      );
+    } catch {
+      message.error("Impossible de charger les classes de l’établissement.");
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadClasses(true);
+  }, [kind]);
+
+  const categoryOptions = [...content.options];
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
     return rows.filter((row) => {
       const matchesSearch = !query || `${row.primary} ${row.secondary} ${row.code}`.toLocaleLowerCase("fr").includes(query);
-      const matchesCategory = category === content.options[0] || row.category === category;
+      const matchesCategory =
+        kind === "classes" ||
+        category === categoryOptions[0] ||
+        row.category === category;
       return matchesSearch && matchesCategory;
     });
-  }, [category, content.options, rows, search]);
+  }, [category, categoryOptions, rows, search]);
 
   const columns = [
     {
@@ -139,54 +188,116 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     { title: content.countLabel, dataIndex: "count", key: "count" },
     { title: "Statut", dataIndex: "status", key: "status", render: (value: string) => <span className="academic-directory__status"><i />{value}</span> },
   ];
+  const visibleColumns =
+    kind === "classes"
+      ? columns.filter((column) => column.key !== "category")
+      : columns;
 
   const createEntry = async () => {
-    await form.validateFields();
-    message.info(
-      "Insertion bloquée : ce formulaire doit d'abord recevoir les champs relationnels école/niveau/année.",
-    );
+    const values = await form.validateFields();
+    if (kind !== "classes") {
+      message.info("Ce module sera relié aux données de l’établissement.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await api.post("/classes", {
+        label: values.name,
+      });
+      await loadClasses();
+      form.resetFields();
+      setIsModalOpen(false);
+      message.success("Classe ajoutée avec succès.");
+    } catch {
+      message.error(
+        "Ajout impossible. Vérifiez le nom de la classe.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const classStats = useMemo(() => {
+    const activeClasses = rows.filter((row) => row.status === "Actif");
+    const students = rows.reduce((total, row) => total + (row.students ?? 0), 0);
+    const occupiedClasses = rows.filter((row) => (row.students ?? 0) > 0).length;
+    return [
+      [String(activeClasses.length), "Classes actives"],
+      [String(students), "Élèves répartis"],
+      [
+        activeClasses.length
+          ? String(Math.round(students / activeClasses.length))
+          : "0",
+        "Élèves par classe",
+      ],
+      [
+        String(occupiedClasses),
+        "Classes avec élèves",
+      ],
+    ];
+  }, [rows]);
+
+  const displayedStats = kind === "classes" ? classStats : content.stats;
 
   return (
     <section className={`academic-directory academic-directory--${kind}`}>
       <header className="academic-directory__hero">
-        <div className="academic-directory__seal"><SafetyCertificateOutlined /><b>PN</b></div>
+        <div className="academic-directory__seal">{content.icon}</div>
         <div>
           <span>{content.eyebrow}</span>
           <h1>{content.title}</h1>
           <p>{content.description}</p>
-          <small>Année académique 2025 — 2026 · Registre sécurisé</small>
         </div>
-        <Button icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>{content.addLabel}</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>{content.addLabel}</Button>
       </header>
 
       <div className="academic-directory__stats">
-        {content.stats.map(([value, label]) => <Card key={label}><strong>{value}</strong><span>{label}</span></Card>)}
+        {displayedStats.map(([value, label]) => <Card key={label}><strong>{value}</strong><span>{label}</span></Card>)}
       </div>
 
       <Card className="academic-directory__registry">
         <div className="academic-directory__registry-title">
-          <div><span>Registre central</span><h2>Liste administrative</h2></div>
+          <div><span>Répertoire</span><h2>Liste administrative</h2></div>
           <small>{filteredRows.length} entrées enregistrées</small>
         </div>
         <div className="academic-directory__toolbar">
           <Input prefix={<SearchOutlined />} placeholder={content.search} value={search} onChange={(event) => setSearch(event.target.value)} allowClear />
-          <Select value={category} onChange={setCategory} options={content.options.map((value) => ({ value, label: value }))} />
+          {kind !== "classes" && (
+            <Select value={category} onChange={setCategory} options={categoryOptions.map((value) => ({ value, label: value }))} />
+          )}
         </div>
-        <Table<DirectoryRow> columns={columns} dataSource={filteredRows} pagination={false} scroll={{ x: 760 }} />
+        <Table<DirectoryRow> columns={visibleColumns} dataSource={filteredRows} loading={isLoading} pagination={false} scroll={{ x: 760 }} />
       </Card>
 
       <Modal
         width={680}
-        title={<div className="academic-directory__modal-title"><span>{content.icon}</span><div><strong>{content.addLabel}</strong><small>Registre administratif officiel</small></div></div>}
+        title={<div className="academic-directory__modal-title"><span>{content.icon}</span><div><strong>{content.addLabel}</strong>{kind !== "classes" && <small>Registre administratif officiel</small>}</div></div>}
         open={isModalOpen}
         onCancel={() => { setIsModalOpen(false); form.resetFields(); }}
         onOk={createEntry}
+        confirmLoading={isSaving}
         okText="Enregistrer"
         cancelText="Annuler"
         className="academic-directory__modal"
       >
-        {["classes", "teachers", "courses"].includes(kind) ? (
+        {kind === "classes" ? (
+          <Form form={form} layout="vertical" className="academic-directory__form academic-directory__form--simple">
+            <Form.Item
+              name="name"
+              label="Nom de la classe"
+              rules={[
+                { required: true, message: "Saisissez le nom de la classe." },
+              ]}
+            >
+              <Input
+                autoFocus
+                prefix={<TeamOutlined />}
+                placeholder="Ex. 6ème A"
+              />
+            </Form.Item>
+          </Form>
+        ) : ["teachers", "courses"].includes(kind) ? (
           <Form form={form} layout="vertical" className="academic-directory__form">
             <div className="academic-directory__form-banner">
               <SafetyCertificateOutlined />
@@ -200,18 +311,41 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                 <Col span={12}><Form.Item name="firstName" label="Prénom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Prénom" /></Form.Item></Col>
               </Row>
             ) : (
-              <Form.Item name="name" label={kind === "classes" ? "Nom de la classe" : "Intitulé du cours"} rules={[{ required: true, message: "Champ requis." }]}>
-                <Input prefix={kind === "classes" ? <TeamOutlined /> : <BookOutlined />} placeholder={kind === "classes" ? "Ex. 3ème A" : "Ex. Géographie"} />
+              <Form.Item
+                name="name"
+                label="Intitulé du cours"
+                rules={[{ required: true, message: "Champ requis." }]}
+              >
+                <Input prefix={<BookOutlined />} placeholder="Ex. Géographie" />
               </Form.Item>
             )}
             <Row gutter={14}>
               <Col span={12}><Form.Item name="code" label="Code officiel" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<IdcardOutlined />} placeholder="Référence unique" /></Form.Item></Col>
-              <Col span={12}><Form.Item name="category" label={content.categoryLabel} rules={[{ required: true, message: "Champ requis." }]}><Select options={content.options.slice(1).map((value) => ({ value, label: value }))} /></Form.Item></Col>
+              <Col span={12}>
+                <Form.Item
+                  name="category"
+                  label={content.categoryLabel}
+                  rules={[{ required: true, message: "Champ requis." }]}
+                >
+                  <Select
+                    placeholder="Sélectionner"
+                    options={content.options
+                      .slice(1)
+                      .map((value) => ({ value, label: value }))}
+                  />
+                </Form.Item>
+              </Col>
             </Row>
             <div className="academic-directory__form-section"><span>02</span><div><strong>Affectation et charge</strong><small>Organisation académique</small></div></div>
             <Row gutter={14}>
-              <Col span={12}><Form.Item name="secondary" label={kind === "classes" ? "Professeur titulaire" : kind === "teachers" ? "Adresse e-mail" : "Niveaux concernés"} rules={[{ required: true, message: "Champ requis." }]}><Input prefix={kind === "teachers" ? <MailOutlined /> : <UserOutlined />} /></Form.Item></Col>
-              <Col span={12}><Form.Item name="count" label={content.countLabel} rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<ClockCircleOutlined />} placeholder={kind === "classes" ? "Ex. 40 élèves" : "Ex. 6 h / sem."} /></Form.Item></Col>
+              <Col span={12}>
+                <Form.Item name="secondary" label={kind === "teachers" ? "Adresse e-mail" : "Niveaux concernés"} rules={[{ required: true, message: "Champ requis." }]}><Input prefix={kind === "teachers" ? <MailOutlined /> : <UserOutlined />} /></Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="count" label={content.countLabel} rules={[{ required: true, message: "Champ requis." }]}>
+                  <Input prefix={<ClockCircleOutlined />} placeholder="Ex. 6 h / sem." />
+                </Form.Item>
+              </Col>
             </Row>
             {kind === "teachers" && (
               <Form.Item name="phone" label="Téléphone (facultatif)"><Input prefix={<PhoneOutlined />} placeholder="+243..." /></Form.Item>

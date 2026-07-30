@@ -1,13 +1,14 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { randomInt } from "node:crypto";
 import * as bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { handlePrismaError } from "../common/prisma-errors";
+import { generateStudentMatricule } from "../students/student-matricule";
 import {
   AssignStudentDto,
   CreateClassDto,
   CreateCourseDto,
-  CreateLevelDto,
   CreateOptionDto,
   CreateSchoolDto,
   CreateSchoolYearDto,
@@ -15,7 +16,6 @@ import {
   CreateTeacherDto,
   UpdateClassDto,
   UpdateCourseDto,
-  UpdateLevelDto,
   UpdateOptionDto,
   UpdateSchoolDto,
   UpdateStudentDto,
@@ -24,6 +24,13 @@ import {
 
 const toBigInt = (id: number | string) => BigInt(id);
 const clean = (value?: string | null) => value?.trim() || undefined;
+const uppercaseName = (value: string) => value.trim().toLocaleUpperCase("fr");
+const capitalizeFirstName = (value: string) => {
+  const normalized = value.trim().toLocaleLowerCase("fr");
+  return normalized
+    ? `${normalized.charAt(0).toLocaleUpperCase("fr")}${normalized.slice(1)}`
+    : normalized;
+};
 const statusFromBoolean = (isActive?: boolean) =>
   isActive === false ? "INACTIF" : "ACTIF";
 const SCHOOL_CODE_CHARACTERS = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -42,6 +49,13 @@ const generateSchoolPassword = () =>
         randomInt(SCHOOL_PASSWORD_CHARACTERS.length)
       ],
   ).join("");
+const classCodeBase = (label: string) =>
+  label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 20) || "CLASSE";
 
 @Injectable()
 export class AcademicService {
@@ -96,7 +110,6 @@ export class AcademicService {
             libelle: true,
             code_classe: true,
             capacite: true,
-            niveaux: { select: { libelle: true } },
             options_scolaires: { select: { libelle: true } },
             _count: {
               select: {
@@ -143,7 +156,6 @@ export class AcademicService {
         id: schoolClass.id_classe.toString(),
         name: schoolClass.libelle,
         code: schoolClass.code_classe,
-        level: schoolClass.niveaux.libelle,
         option: schoolClass.options_scolaires?.libelle ?? null,
         capacity: schoolClass.capacite,
         students: schoolClass._count.inscriptions,
@@ -284,61 +296,6 @@ export class AcademicService {
     return (await this.listSchools()).find((item) => item.id === id);
   }
 
-  async listLevels(schoolId?: string) {
-    const levels = await this.prisma.niveaux.findMany({
-      where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
-      orderBy: [{ id_ecole: "asc" }, { ordre: "asc" }],
-    });
-    return levels.map((level) => ({
-      id: level.id_niveau.toString(),
-      schoolId: level.id_ecole.toString(),
-      label: level.libelle,
-      order: level.ordre,
-      description: level.description,
-      isActive: level.statut === "ACTIF",
-    }));
-  }
-
-  async createLevel(dto: CreateLevelDto) {
-    try {
-      return await this.prisma.niveaux.create({
-        data: {
-          id_ecole: toBigInt(dto.schoolId),
-          libelle: dto.label.trim(),
-          ordre: dto.order,
-          description: clean(dto.description),
-        },
-      });
-    } catch (error) {
-      handlePrismaError(error);
-    }
-  }
-
-  async updateLevel(id: string, dto: UpdateLevelDto) {
-    try {
-      return await this.prisma.niveaux.update({
-        where: { id_niveau: toBigInt(id) },
-        data: {
-          id_ecole: toBigInt(dto.schoolId),
-          libelle: dto.label.trim(),
-          ordre: dto.order,
-          description: clean(dto.description),
-        },
-      });
-    } catch (error) {
-      handlePrismaError(error);
-    }
-  }
-
-  async deleteLevel(id: string) {
-    try {
-      await this.prisma.niveaux.delete({ where: { id_niveau: toBigInt(id) } });
-      return { deleted: true };
-    } catch (error) {
-      handlePrismaError(error);
-    }
-  }
-
   async listOptions(schoolId?: string) {
     const options = await this.prisma.options_scolaires.findMany({
       where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
@@ -399,35 +356,56 @@ export class AcademicService {
   async listClasses(schoolId?: string) {
     const classes = await this.prisma.classes.findMany({
       where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
-      include: { niveaux: true, options_scolaires: true },
+      include: {
+        options_scolaires: true,
+        _count: { select: { inscriptions: true } },
+      },
       orderBy: { libelle: "asc" },
     });
     return classes.map((item) => ({
       id: item.id_classe.toString(),
       schoolId: item.id_ecole.toString(),
-      levelId: item.id_niveau.toString(),
       optionId: item.id_option?.toString(),
       label: item.libelle,
       code: item.code_classe,
       capacity: item.capacite,
-      level: item.niveaux.libelle,
+      students: item._count.inscriptions,
       option: item.options_scolaires?.libelle,
       isActive: item.statut === "ACTIF",
     }));
   }
 
-  async createClass(dto: CreateClassDto) {
+  async createClass(dto: CreateClassDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const normalizedLabel = dto.label.trim().replace(/\s+/g, " ");
     try {
-      return await this.prisma.classes.create({
+      const baseCode = classCodeBase(dto.label);
+      let code = baseCode;
+      let suffix = 1;
+      while (
+        await this.prisma.classes.findUnique({
+          where: {
+            id_ecole_code_classe: { id_ecole, code_classe: code },
+          },
+          select: { id_classe: true },
+        })
+      ) {
+        suffix += 1;
+        code = `${baseCode.slice(0, 25)}-${suffix}`;
+      }
+
+      const schoolClass = await this.prisma.classes.create({
         data: {
-          id_ecole: toBigInt(dto.schoolId),
-          id_niveau: toBigInt(dto.levelId),
-          id_option: dto.optionId ? toBigInt(dto.optionId) : undefined,
-          libelle: dto.label.trim(),
-          code_classe: dto.code.trim().toUpperCase(),
-          capacite: dto.capacity,
+          id_ecole,
+          libelle: normalizedLabel,
+          code_classe: code,
         },
       });
+      return {
+        id: schoolClass.id_classe.toString(),
+        label: schoolClass.libelle,
+        code: schoolClass.code_classe,
+      };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -438,12 +416,8 @@ export class AcademicService {
       return await this.prisma.classes.update({
         where: { id_classe: toBigInt(id) },
         data: {
-          id_ecole: toBigInt(dto.schoolId),
-          id_niveau: toBigInt(dto.levelId),
-          id_option: dto.optionId ? toBigInt(dto.optionId) : null,
+          id_ecole: dto.schoolId ? toBigInt(dto.schoolId) : undefined,
           libelle: dto.label.trim(),
-          code_classe: dto.code.trim().toUpperCase(),
-          capacite: dto.capacity,
         },
       });
     } catch (error) {
@@ -592,7 +566,10 @@ export class AcademicService {
 
   async listStudents(schoolId?: string) {
     const students = await this.prisma.eleves.findMany({
-      where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
+      where: {
+        statut: "ACTIF",
+        ...(schoolId ? { id_ecole: toBigInt(schoolId) } : {}),
+      },
       include: {
         inscriptions: {
           orderBy: { date_inscription: "desc" },
@@ -621,61 +598,196 @@ export class AcademicService {
       guardianName: student.nom_tuteur,
       guardianPhone: student.telephone_tuteur,
       photo: student.photo,
+      classId: student.inscriptions[0]?.id_classe.toString(),
       className: student.inscriptions[0]?.classes.libelle ?? "—",
       status: student.statut === "ACTIF" ? "Actif" : "En attente",
     }));
   }
 
-  async createStudent(dto: CreateStudentDto) {
-    try {
-      return await this.prisma.eleves.create({
-        data: {
-          id_ecole: toBigInt(dto.schoolId),
-          matricule: dto.matricule.trim().toUpperCase(),
-          nom: dto.lastName.trim(),
-          postnom: clean(dto.postName),
-          prenom: dto.firstName.trim(),
-          sexe: clean(dto.gender),
-          date_naissance: dto.birthDate ? new Date(dto.birthDate) : undefined,
-          lieu_naissance: clean(dto.birthPlace),
-          adresse: clean(dto.address),
-          nom_tuteur: clean(dto.guardianName),
-          telephone_tuteur: clean(dto.guardianPhone),
-          photo: clean(dto.photo),
+  async createStudent(dto: CreateStudentDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const id_classe = toBigInt(dto.classId);
+    const schoolClass = await this.prisma.classes.findFirst({
+      where: { id_classe, id_ecole, statut: "ACTIF" },
+    });
+
+    if (!schoolClass) {
+      throw new BadRequestException(
+        "La classe sélectionnée n'appartient pas à votre établissement.",
+      );
+    }
+
+    let activeSchoolYear = await this.prisma.annees_scolaires.findFirst({
+      where: { id_ecole, est_active: true },
+      orderBy: { date_debut: "desc" },
+    });
+    if (!activeSchoolYear) {
+      const today = new Date();
+      const startYear =
+        today.getUTCMonth() >= 8
+          ? today.getUTCFullYear()
+          : today.getUTCFullYear() - 1;
+      const label = `${startYear}-${startYear + 1}`;
+      activeSchoolYear = await this.prisma.annees_scolaires.upsert({
+        where: { id_ecole_libelle: { id_ecole, libelle: label } },
+        update: { est_active: true, statut: "EN_COURS" },
+        create: {
+          id_ecole,
+          libelle: label,
+          date_debut: new Date(Date.UTC(startYear, 8, 1)),
+          date_fin: new Date(Date.UTC(startYear + 1, 7, 31)),
+          est_active: true,
+          statut: "EN_COURS",
         },
+      });
+    }
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const matricule = generateStudentMatricule();
+      const exists = await this.prisma.eleves.findUnique({
+        where: { matricule },
+        select: { id_eleve: true },
+      });
+      if (exists) continue;
+
+      try {
+        return await this.prisma.$transaction(async (prisma) => {
+          const student = await prisma.eleves.create({
+            data: {
+              id_ecole,
+              matricule,
+              nom: uppercaseName(dto.lastName),
+              postnom: dto.postName ? uppercaseName(dto.postName) : undefined,
+              prenom: capitalizeFirstName(dto.firstName),
+              sexe: clean(dto.gender),
+              date_naissance: dto.birthDate
+                ? new Date(dto.birthDate)
+                : undefined,
+              adresse: clean(dto.address),
+              telephone_tuteur: clean(dto.guardianPhone),
+              photo: clean(dto.photo),
+            },
+          });
+          await prisma.inscriptions.create({
+            data: {
+              id_eleve: student.id_eleve,
+              id_classe,
+              id_annee_scolaire: activeSchoolYear.id_annee_scolaire,
+            },
+          });
+          return {
+            id: student.id_eleve.toString(),
+            matricule: student.matricule,
+          };
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002" &&
+          String(error.meta?.target).includes("matricule")
+        ) {
+          continue;
+        }
+        handlePrismaError(error);
+      }
+    }
+
+    throw new BadRequestException(
+      "Impossible de générer un matricule unique. Réessayez.",
+    );
+  }
+
+  async updateStudent(id: string, dto: UpdateStudentDto, schoolId: string) {
+    const id_eleve = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    const id_classe = toBigInt(dto.classId);
+    const [student, schoolClass] = await Promise.all([
+      this.prisma.eleves.findFirst({ where: { id_eleve, id_ecole } }),
+      this.prisma.classes.findFirst({
+        where: { id_classe, id_ecole, statut: "ACTIF" },
+      }),
+    ]);
+    if (!student) throw new NotFoundException("Élève introuvable.");
+    if (!schoolClass) {
+      throw new BadRequestException(
+        "La classe sélectionnée n'appartient pas à votre établissement.",
+      );
+    }
+
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        const updated = await prisma.eleves.update({
+          where: { id_eleve },
+          data: {
+            nom: uppercaseName(dto.lastName),
+            postnom: dto.postName ? uppercaseName(dto.postName) : undefined,
+            prenom: capitalizeFirstName(dto.firstName),
+            sexe: clean(dto.gender),
+            date_naissance: dto.birthDate ? new Date(dto.birthDate) : null,
+            adresse: clean(dto.address),
+            telephone_tuteur: clean(dto.guardianPhone),
+            photo: clean(dto.photo),
+            date_mise_a_jour: new Date(),
+          },
+        });
+        const enrollment = await prisma.inscriptions.findFirst({
+          where: { id_eleve },
+          orderBy: { date_inscription: "desc" },
+        });
+        if (enrollment) {
+          await prisma.inscriptions.update({
+            where: { id_inscription: enrollment.id_inscription },
+            data: { id_classe, date_mise_a_jour: new Date() },
+          });
+        }
+        return { id: updated.id_eleve.toString() };
       });
     } catch (error) {
       handlePrismaError(error);
     }
   }
 
-  async updateStudent(id: string, dto: UpdateStudentDto) {
-    try {
-      return await this.prisma.eleves.update({
-        where: { id_eleve: toBigInt(id) },
-        data: {
-          id_ecole: toBigInt(dto.schoolId),
-          matricule: dto.matricule.trim().toUpperCase(),
-          nom: dto.lastName.trim(),
-          postnom: clean(dto.postName),
-          prenom: dto.firstName.trim(),
-          sexe: clean(dto.gender),
-          date_naissance: dto.birthDate ? new Date(dto.birthDate) : null,
-          lieu_naissance: clean(dto.birthPlace),
-          adresse: clean(dto.address),
-          nom_tuteur: clean(dto.guardianName),
-          telephone_tuteur: clean(dto.guardianPhone),
-          photo: clean(dto.photo),
-        },
-      });
-    } catch (error) {
-      handlePrismaError(error);
+  async deleteStudent(
+    id: string,
+    schoolId: string,
+    confirmation?: { directorId: string; password: string },
+  ) {
+    const id_eleve = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    if (confirmation) {
+      const isSchoolAccount = confirmation.directorId.startsWith("school-");
+      const account = isSchoolAccount
+        ? await this.prisma.ecoles.findFirst({
+            where: { id_ecole, statut: "ACTIF" },
+            select: { mot_de_passe_hash: true },
+          })
+        : await this.prisma.directeurs.findFirst({
+            where: {
+              id_directeur: toBigInt(confirmation.directorId),
+              id_ecole,
+              statut_compte: "ACTIF",
+            },
+            select: { mot_de_passe_hash: true },
+          });
+      if (
+        !account?.mot_de_passe_hash ||
+        !(await bcrypt.compare(
+          confirmation.password,
+          account.mot_de_passe_hash,
+        ))
+      ) {
+        throw new UnauthorizedException("Mot de passe incorrect.");
+      }
     }
-  }
-
-  async deleteStudent(id: string) {
+    const student = await this.prisma.eleves.findFirst({
+      where: { id_eleve, id_ecole },
+    });
+    if (!student) throw new NotFoundException("Élève introuvable.");
     try {
-      await this.prisma.eleves.delete({ where: { id_eleve: toBigInt(id) } });
+      await this.prisma.eleves.update({
+        where: { id_eleve },
+        data: { statut: "INACTIF", date_mise_a_jour: new Date() },
+      });
       return { deleted: true };
     } catch (error) {
       handlePrismaError(error);

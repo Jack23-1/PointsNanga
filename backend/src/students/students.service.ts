@@ -1,15 +1,15 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { normalizeStudentMatricule } from "./student-matricule";
 
 @Injectable()
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findByMatricule(matricule: string) {
-    const student = await this.prisma.eleves.findFirst({
+    const student = await this.prisma.eleves.findUnique({
       where: {
-        matricule: matricule.trim(),
-        statut: "ACTIF",
+        matricule: normalizeStudentMatricule(matricule),
       },
       include: {
         ecoles: true,
@@ -21,7 +21,7 @@ export class StudentsService {
       },
     });
 
-    if (!student) {
+    if (!student || student.statut !== "ACTIF") {
       throw new NotFoundException("Élève introuvable.");
     }
 

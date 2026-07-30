@@ -49,27 +49,6 @@ export class CreateSchoolDto {
 
 export class UpdateSchoolDto extends CreateSchoolDto {}
 
-export class CreateLevelDto {
-  @IsInt()
-  @Min(1)
-  schoolId: number;
-
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  label: string;
-
-  @IsInt()
-  @Min(1)
-  order: number;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-}
-
-export class UpdateLevelDto extends CreateLevelDto {}
-
 export class CreateOptionDto {
   @IsInt()
   @Min(1)
@@ -93,33 +72,16 @@ export class CreateOptionDto {
 export class UpdateOptionDto extends CreateOptionDto {}
 
 export class CreateClassDto {
-  @IsInt()
-  @Min(1)
-  schoolId: number;
-
-  @IsInt()
-  @Min(1)
-  levelId: number;
-
   @IsOptional()
   @IsInt()
   @Min(1)
-  optionId?: number;
+  schoolId?: number;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
   label: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(30)
-  code: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  capacity?: number;
 }
 
 export class UpdateClassDto extends CreateClassDto {}
@@ -200,14 +162,14 @@ export class CreateCourseDto {
 export class UpdateCourseDto extends CreateCourseDto {}
 
 export class CreateStudentDto {
+  @IsOptional()
   @IsInt()
   @Min(1)
-  schoolId: number;
+  schoolId?: number;
 
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
-  matricule: string;
+  @IsInt()
+  @Min(1)
+  classId: number;
 
   @IsString()
   @IsNotEmpty()
@@ -254,11 +216,17 @@ export class CreateStudentDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLength(3000000)
   photo?: string;
 }
 
 export class UpdateStudentDto extends CreateStudentDto {}
+
+export class DeleteStudentDto {
+  @IsString()
+  @IsNotEmpty()
+  password: string;
+}
 
 export class CreateSchoolYearDto {
   @IsInt()

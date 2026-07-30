@@ -1,0 +1,2 @@
+ALTER TABLE "eleves"
+ALTER COLUMN "photo" TYPE TEXT;
