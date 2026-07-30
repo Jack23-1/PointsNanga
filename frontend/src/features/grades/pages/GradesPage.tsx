@@ -49,6 +49,9 @@ interface Gradebook {
 const gradeKey = (studentId: string, courseId: string) =>
   `${studentId}:${courseId}`;
 
+const clampGradeValue = (value: number, weight: number) =>
+  Math.min(weight, Math.max(0, Math.round(value)));
+
 const errorMessage = (error: unknown, fallback: string) => {
   if (!axios.isAxiosError(error)) return fallback;
   const value = error.response?.data?.message;
@@ -104,15 +107,23 @@ const GradesPage = () => {
     if (!data?.period) return;
     const payload = Object.entries(grades).map(([key, value]) => {
       const [enrollmentId, courseClassId] = key.split(":");
-      return { enrollmentId: Number(enrollmentId), courseClassId: Number(courseClassId), value };
+      return {
+        enrollmentId: Number(enrollmentId),
+        courseClassId: Number(courseClassId),
+        value,
+      };
     });
     setSaving(true);
     try {
       await api.patch("/grades/homeroom", { grades: payload });
-      message.success(`${payload.length} cote${payload.length > 1 ? "s" : ""} enregistrée${payload.length > 1 ? "s" : ""}.`);
+      message.success(
+        `${payload.length} cote${payload.length > 1 ? "s" : ""} enregistrée${payload.length > 1 ? "s" : ""}.`,
+      );
       await loadGradebook();
     } catch (error) {
-      message.error(errorMessage(error, "Enregistrement des cotes impossible."));
+      message.error(
+        errorMessage(error, "Enregistrement des cotes impossible."),
+      );
     } finally {
       setSaving(false);
     }
@@ -131,6 +142,8 @@ const GradesPage = () => {
       </Card>
     );
   }
+
+  const headerRotationClass = "gradebook__sheet--rotate-90";
 
   return (
     <section className="gradebook">
@@ -176,7 +189,7 @@ const GradesPage = () => {
         <div className="gradebook__toolbar">
           <div>
             <strong>{data.students.length} élèves</strong>
-            <span>{data.courses.length} cours avec pondération</span>
+            <span>{data.courses.length} cours</span>
           </div>
           <Input.Search
             allowClear
@@ -188,16 +201,15 @@ const GradesPage = () => {
         {students.length === 0 || data.courses.length === 0 ? (
           <Empty description="Aucun élève ou cours disponible." />
         ) : (
-          <div className="gradebook__sheet">
+          <div className={`gradebook__sheet ${headerRotationClass}`.trim()}>
             <table>
               <thead>
                 <tr>
                   <th className="gradebook__student-column">ÉLÈVES</th>
                   {data.courses.map((course) => (
-                    <th key={course.id}>
+                    <th key={course.id} className="gradebook__course-column">
                       <div className="gradebook__course-title">
-                        <strong>{course.name}</strong>
-                        <span>Pondération : {course.weight}</span>
+                        <strong>{`${course.name} (${course.weight})`}</strong>
                       </div>
                     </th>
                   ))}
@@ -220,16 +232,24 @@ const GradesPage = () => {
                     </th>
                     {data.courses.map((course) => {
                       const key = gradeKey(student.id, course.id);
+                      const value = grades[key];
+                      const isFail =
+                        value !== undefined && value < course.weight / 2;
+                      const isPass =
+                        value !== undefined && value >= course.weight / 2;
                       return (
                         <td key={course.id}>
                           <InputNumber
-                            className="gradebook__input"
+                            className={`gradebook__input${isFail ? " gradebook__input--fail" : isPass ? " gradebook__input--pass" : ""}`}
+                            controls={false}
                             min={0}
                             max={course.weight}
-                            precision={2}
-                            value={grades[key]}
+                            precision={0}
+                            parser={(displayValue) =>
+                              (displayValue ?? "").replace(/\D+/g, "")
+                            }
+                            value={value}
                             disabled={!data.period}
-                            placeholder={`0 / ${course.weight}`}
                             onChange={(value) =>
                               setGrades((current) => {
                                 if (value === null) {
@@ -237,7 +257,20 @@ const GradesPage = () => {
                                   delete next[key];
                                   return next;
                                 }
-                                return { ...current, [key]: value };
+                                const numericValue =
+                                  typeof value === "number"
+                                    ? value
+                                    : Number(value);
+                                if (Number.isNaN(numericValue)) {
+                                  return current;
+                                }
+                                return {
+                                  ...current,
+                                  [key]: clampGradeValue(
+                                    numericValue,
+                                    course.weight,
+                                  ),
+                                };
                               })
                             }
                           />

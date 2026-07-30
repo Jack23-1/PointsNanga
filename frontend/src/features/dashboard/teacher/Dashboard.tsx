@@ -4,13 +4,10 @@ import {
   CheckCircleOutlined,
   ReloadOutlined,
   TeamOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
-import { Avatar, Button, Card, Empty, Skeleton, Table, message } from "antd";
-import { useNavigate } from "react-router-dom";
+import { Button, Card, Empty, Skeleton, message } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
-import { ROUTES } from "../../../config/constants";
 import GradesPage from "../../grades/pages/GradesPage";
 
 interface HomeroomDashboardData {
@@ -20,23 +17,11 @@ interface HomeroomDashboardData {
   schoolYear: string;
   openPeriod: string | null;
   stats: { students: number; courses: number; gradesEntered: number };
-  courses: {
-    id: string;
-    name: string;
-    weight: number;
-    teacher: string;
-  }[];
-  students: {
-    id: string;
-    matricule: string;
-    name: string;
-    photo?: string | null;
-    orderNumber?: number | null;
-  }[];
 }
 
 const getErrorMessage = (error: unknown) => {
-  if (!axios.isAxiosError(error)) return "Chargement du tableau de bord impossible.";
+  if (!axios.isAxiosError(error))
+    return "Chargement du tableau de bord impossible.";
   const value = error.response?.data?.message;
   return typeof value === "string"
     ? value
@@ -44,15 +29,15 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const TeacherDashboard = () => {
-  const navigate = useNavigate();
   const [data, setData] = useState<HomeroomDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      const response =
-        await api.get<HomeroomDashboardData>("/dashboard/homeroom");
+      const response = await api.get<HomeroomDashboardData>(
+        "/dashboard/homeroom",
+      );
       setData(response.data);
     } catch (error) {
       message.error(getErrorMessage(error));
@@ -129,71 +114,6 @@ const TeacherDashboard = () => {
             </div>
           </Card>
         ))}
-      </div>
-
-      <div className="homeroom-dashboard__grid">
-        <Card
-          className="homeroom-dashboard__panel"
-          title="Élèves de la classe"
-          extra={<small>{data.stats.students} inscrits</small>}
-        >
-          <Table
-            rowKey="id"
-            pagination={false}
-            dataSource={data.students}
-            locale={{ emptyText: "Aucun élève inscrit dans cette classe." }}
-            columns={[
-              {
-                title: "Élève",
-                key: "student",
-                render: (_, row) => (
-                  <div className="homeroom-dashboard__student">
-                    <Avatar src={row.photo || undefined} icon={<UserOutlined />} />
-                    <div>
-                      <strong>{row.name}</strong>
-                      <small>{row.matricule}</small>
-                    </div>
-                  </div>
-                ),
-              },
-              {
-                title: "N°",
-                dataIndex: "orderNumber",
-                width: 60,
-                render: (value) => value ?? "—",
-              },
-            ]}
-          />
-        </Card>
-
-        <Card
-          className="homeroom-dashboard__panel"
-          title="Cours de la classe"
-          extra={
-            <Button type="link" onClick={() => navigate(ROUTES.GRADES)}>
-              Gérer les notes
-            </Button>
-          }
-        >
-          <div className="homeroom-dashboard__courses">
-            {data.courses.length === 0 ? (
-              <Empty description="Aucun cours attribué à cette classe." />
-            ) : (
-              data.courses.map((course) => (
-                <div key={course.id}>
-                  <span className="homeroom-dashboard__course-icon">
-                    <BookOutlined />
-                  </span>
-                  <div>
-                    <strong>{course.name}</strong>
-                    <small>{course.teacher}</small>
-                  </div>
-                  <b>{course.weight}</b>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
       </div>
 
       <GradesPage />
