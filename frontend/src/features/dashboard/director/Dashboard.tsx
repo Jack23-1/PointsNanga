@@ -1,305 +1,367 @@
+import { useEffect, useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   Col,
+  Empty,
   Progress,
   Row,
-  Space,
+  Skeleton,
   Table,
   Tag,
 } from "antd";
 import {
+  ArrowRightOutlined,
   BookOutlined,
-  CalendarOutlined,
-  CheckCircleOutlined,
-  EditOutlined,
-  FileDoneOutlined,
-  NotificationOutlined,
+  CheckCircleFilled,
   PlusOutlined,
-  RiseOutlined,
+  ReadOutlined,
+  ReloadOutlined,
+  SettingOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { useAuth } from "../../../hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+import { ROUTES } from "../../../config/constants";
+import { api } from "../../../lib/api";
 
-interface ClassRecord {
-  key: string;
-  class: string;
-  students: number;
-  progress: number;
-  status: "completed" | "in_progress" | "not_started";
+interface DirectorDashboardData {
+  school: {
+    id: string;
+    name: string;
+    code: string;
+    address: string | null;
+    city: string;
+    phone: string | null;
+    logo: string | null;
+  };
+  activeSchoolYear: {
+    id: string;
+    label: string;
+    startsAt: string;
+    endsAt: string;
+  } | null;
+  counts: {
+    students: number;
+    classes: number;
+    teachers: number;
+    courses: number;
+  };
+  classes: Array<{
+    id: string;
+    name: string;
+    code: string;
+    level: string;
+    option: string | null;
+    capacity: number | null;
+    students: number;
+  }>;
 }
 
-const classData: ClassRecord[] = [
-  { key: "1", class: "6ème A", students: 45, progress: 100, status: "completed" },
-  { key: "2", class: "6ème B", students: 42, progress: 85, status: "in_progress" },
-  { key: "3", class: "5ème A", students: 38, progress: 60, status: "in_progress" },
-  { key: "4", class: "5ème B", students: 40, progress: 0, status: "not_started" },
-];
-
 const DirectorDashboard = () => {
-  const { user } = useAuth();
-  const schoolName = user?.lastName || "votre établissement";
+  const navigate = useNavigate();
+  const [data, setData] = useState<DirectorDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const columns = [
-    {
-      title: "Classe",
-      dataIndex: "class",
-      key: "class",
-      render: (className: string) => (
-        <div className="director-class">
-          <span>{className.slice(0, 1)}</span>
-          <strong>{className}</strong>
-        </div>
-      ),
-    },
-    {
-      title: "Effectif",
-      dataIndex: "students",
-      key: "students",
-      render: (students: number) => (
-        <span className="director-student-count">{students} élèves</span>
-      ),
-    },
-    {
-      title: "Progression des notes",
-      dataIndex: "progress",
-      key: "progress",
-      render: (progress: number) => (
-        <Progress
-          percent={progress}
-          size="small"
-          strokeColor={{ "0%": "#1467c3", "100%": "#22a06b" }}
+  const loadDashboard = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response =
+        await api.get<DirectorDashboardData>("/dashboard/director");
+      setData(response.data);
+    } catch {
+      setError(
+        "Les informations de votre établissement n'ont pas pu être chargées.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="director-dashboard director-dashboard--loading">
+        <Skeleton active paragraph={{ rows: 3 }} />
+        <Row gutter={[16, 16]}>
+          {[1, 2, 3, 4].map((item) => (
+            <Col xs={24} sm={12} xl={6} key={item}>
+              <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
+            </Col>
+          ))}
+        </Row>
+        <Card><Skeleton active paragraph={{ rows: 6 }} /></Card>
+      </div>
+    );
+  }
+
+  if (!data || error) {
+    return (
+      <div className="director-dashboard">
+        <Alert
+          showIcon
+          type="error"
+          message="Chargement impossible"
+          description={error}
+          action={
+            <Button icon={<ReloadOutlined />} onClick={loadDashboard}>
+              Réessayer
+            </Button>
+          }
         />
-      ),
-    },
-    {
-      title: "Statut",
-      dataIndex: "status",
-      key: "status",
-      render: (status: ClassRecord["status"]) => {
-        const label = {
-          completed: "Terminé",
-          in_progress: "En cours",
-          not_started: "À démarrer",
-        }[status];
-        return (
-          <Tag className={`director-status director-status--${status}`}>
-            <i />
-            {label}
-          </Tag>
-        );
-      },
-    },
-    {
-      title: "",
-      key: "actions",
-      render: () => (
-        <Space>
-          <Button className="director-manage-button" icon={<EditOutlined />}>
-            Gérer
-          </Button>
-        </Space>
-      ),
-    },
-  ];
+      </div>
+    );
+  }
 
   const metrics = [
     {
-      label: "Total élèves",
-      value: "1 250",
-      detail: "+42 cette année",
+      label: "Élèves actifs",
+      value: data.counts.students,
       icon: <UserOutlined />,
-      tone: "blue",
+      route: ROUTES.STUDENTS,
     },
     {
-      label: "Total classes",
-      value: "24",
-      detail: "6 niveaux actifs",
+      label: "Classes actives",
+      value: data.counts.classes,
       icon: <BookOutlined />,
-      tone: "green",
+      route: ROUTES.CLASSES,
     },
     {
-      label: "Enseignants",
-      value: "45",
-      detail: "92 % présents",
+      label: "Enseignants actifs",
+      value: data.counts.teachers,
       icon: <TeamOutlined />,
-      tone: "violet",
+      route: ROUTES.TEACHERS,
     },
     {
-      label: "Bulletins prêts",
-      value: "18",
-      detail: "75 % finalisés",
-      icon: <CheckCircleOutlined />,
-      tone: "amber",
+      label: "Cours actifs",
+      value: data.counts.courses,
+      icon: <ReadOutlined />,
+      route: ROUTES.COURSES,
     },
   ];
 
+  const setupItems = [
+    {
+      label: "Créer les classes",
+      ready: data.counts.classes > 0,
+      route: ROUTES.CLASSES,
+    },
+    {
+      label: "Enregistrer les enseignants",
+      ready: data.counts.teachers > 0,
+      route: ROUTES.TEACHERS,
+    },
+    {
+      label: "Ajouter les cours",
+      ready: data.counts.courses > 0,
+      route: ROUTES.COURSES,
+    },
+    {
+      label: "Inscrire les élèves",
+      ready: data.counts.students > 0,
+      route: ROUTES.STUDENTS,
+    },
+  ];
+  const completedSetup = setupItems.filter((item) => item.ready).length;
+  const setupProgress = Math.round(
+    (completedSetup / setupItems.length) * 100,
+  );
+
   return (
-    <div className="director-dashboard">
-      <section className="director-dashboard__welcome">
-        <span className="director-dashboard__welcome-orb" aria-hidden="true" />
-        <div>
-          <div className="director-dashboard__welcome-meta">
-            <span className="director-dashboard__eyebrow">Vue d’ensemble</span>
-            <span className="director-dashboard__live"><i /> Données à jour</span>
-          </div>
-          <h1>Bonjour, Direction</h1>
-          <p>
-            Voici les informations essentielles de <strong>{schoolName}</strong>.
-          </p>
-        </div>
-        <div className="director-dashboard__period">
-          <RiseOutlined />
-          <span>
-            Année scolaire
-            <strong>2025 — 2026</strong>
-          </span>
-        </div>
-      </section>
+    <div className="director-dashboard director-overview">
+      {!data.activeSchoolYear && (
+        <Alert
+          className="director-overview__notice"
+          showIcon
+          type="warning"
+          message="Aucune année scolaire active"
+          description="Activez une année scolaire pour afficher les effectifs actuels de chaque classe."
+        />
+      )}
 
       <Row gutter={[16, 16]} className="director-dashboard__metrics">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} xl={6} key={metric.label}>
-            <Card className={`director-metric director-metric--${metric.tone}`}>
+            <Card
+              hoverable
+              className="director-metric"
+              onClick={() => navigate(metric.route)}
+            >
               <div className="director-metric__top">
                 <span className="director-metric__icon">{metric.icon}</span>
-                <span className="director-metric__trend">Actif</span>
+                <ArrowRightOutlined className="director-metric__arrow" />
               </div>
               <span className="director-metric__label">{metric.label}</span>
-              <strong className="director-metric__value">{metric.value}</strong>
-              <small>{metric.detail}</small>
+              <strong className="director-metric__value">
+                {metric.value.toLocaleString("fr-FR")}
+              </strong>
+              <small>Données enregistrées dans votre école</small>
             </Card>
           </Col>
         ))}
       </Row>
 
-      <section className="director-performance">
-        <div className="director-performance__intro">
-          <span className="director-dashboard__eyebrow">Performance générale</span>
-          <h2>Une école en bonne progression</h2>
-          <p>
-            La complétion académique progresse de <strong>8,4 %</strong> par
-            rapport au mois dernier.
-          </p>
-          <div className="director-performance__legend">
-            <span><i className="is-current" /> Cette semaine</span>
-            <span><i /> Semaine passée</span>
-          </div>
-        </div>
-
-        <div className="director-performance__chart" aria-label="Progression hebdomadaire">
-          {[42, 58, 51, 72, 67, 84, 92].map((value, index) => (
-            <div className="director-performance__bar" key={value}>
-              <span style={{ height: `${value}%` }} />
-              <small>{["L", "M", "M", "J", "V", "S", "D"][index]}</small>
-            </div>
-          ))}
-        </div>
-
-        <div className="director-performance__scores">
-          <div>
-            <span className="director-score-ring director-score-ring--green">
-              <b>92%</b>
-            </span>
-            <small>Présence</small>
-          </div>
-          <div>
-            <span className="director-score-ring director-score-ring--blue">
-              <b>84%</b>
-            </span>
-            <small>Encodage</small>
-          </div>
-          <div>
-            <span className="director-score-ring director-score-ring--gold">
-              <b>75%</b>
-            </span>
-            <small>Bulletins</small>
-          </div>
-        </div>
-      </section>
-
-      <Card className="director-classes-card">
-        <div className="director-classes-card__heading">
-          <div>
-            <span className="director-dashboard__eyebrow">Suivi académique</span>
-            <h2>Progression des classes</h2>
-            <p>Suivez l’encodage des notes pour chaque classe.</p>
-          </div>
-          <Button type="primary" icon={<PlusOutlined />}>
-            Nouvelle classe
-          </Button>
-        </div>
-        <Table<ClassRecord>
-          columns={columns}
-          dataSource={classData}
-          pagination={false}
-          scroll={{ x: 760 }}
-        />
-      </Card>
-
-      <section className="director-dashboard__lower-grid">
-        <Card className="director-insight-card">
-          <div className="director-panel-heading">
+      <section className="director-overview__grid">
+        <Card className="director-classes-card director-overview__classes">
+          <div className="director-classes-card__heading">
             <div>
-              <span className="director-dashboard__eyebrow">À surveiller</span>
-              <h2>Activité récente</h2>
+              <span className="director-dashboard__eyebrow">
+                Structure académique
+              </span>
+              <h2>Vos classes</h2>
+              <p>
+                Effectifs de l’année scolaire actuellement active
+                {data.activeSchoolYear?.label ? ` · ${data.activeSchoolYear.label}` : ""}
+              </p>
             </div>
-            <Button type="link">Tout afficher</Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate(ROUTES.CLASSES)}
+            >
+              Gérer les classes
+            </Button>
           </div>
-          <div className="director-activity-list">
-            <div className="director-activity">
-              <span className="director-activity__icon director-activity__icon--blue">
-                <FileDoneOutlined />
-              </span>
-              <div>
-                <strong>Bulletins du premier semestre</strong>
-                <p>18 classes sur 24 ont finalisé leurs résultats.</p>
-              </div>
-              <time>Il y a 20 min</time>
-            </div>
-            <div className="director-activity">
-              <span className="director-activity__icon director-activity__icon--green">
-                <CheckCircleOutlined />
-              </span>
-              <div>
-                <strong>Encodage validé</strong>
-                <p>La classe de 6ème A a terminé l’encodage des notes.</p>
-              </div>
-              <time>Aujourd’hui</time>
-            </div>
-            <div className="director-activity">
-              <span className="director-activity__icon director-activity__icon--amber">
-                <NotificationOutlined />
-              </span>
-              <div>
-                <strong>Validation en attente</strong>
-                <p>Trois classes nécessitent encore votre attention.</p>
-              </div>
-              <time>Hier</time>
-            </div>
-          </div>
+          <Table
+            rowKey="id"
+            dataSource={data.classes}
+            pagination={data.classes.length > 6 ? { pageSize: 6 } : false}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="Aucune classe enregistrée"
+                >
+                  <Button
+                    type="primary"
+                    onClick={() => navigate(ROUTES.CLASSES)}
+                  >
+                    Créer la première classe
+                  </Button>
+                </Empty>
+              ),
+            }}
+            columns={[
+              {
+                title: "Classe",
+                dataIndex: "name",
+                render: (name: string, record) => (
+                  <div className="director-class">
+                    <span>{name.slice(0, 1).toUpperCase()}</span>
+                    <div>
+                      <strong>{name}</strong>
+                      <small>{record.code}</small>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                title: "Niveau",
+                dataIndex: "level",
+                render: (level: string, record) => (
+                  <div className="director-class-level">
+                    <span>{level}</span>
+                    {record.option && <small>{record.option}</small>}
+                  </div>
+                ),
+              },
+              {
+                title: "Effectif",
+                dataIndex: "students",
+                render: (students: number, record) => (
+                  <div className="director-class-capacity">
+                    <strong>{students} élève{students !== 1 ? "s" : ""}</strong>
+                    {record.capacity && (
+                      <small>Capacité : {record.capacity}</small>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                title: "État",
+                render: (_, record) => (
+                  <Tag
+                    className={`director-capacity-tag${
+                      record.capacity && record.students >= record.capacity
+                        ? " is-full"
+                        : ""
+                    }`}
+                  >
+                    {record.capacity && record.students >= record.capacity
+                      ? "Capacité atteinte"
+                      : "Active"}
+                  </Tag>
+                ),
+              },
+            ]}
+          />
         </Card>
 
-        <Card className="director-quick-card">
-          <span className="director-dashboard__eyebrow">Raccourcis</span>
-          <h2>Actions rapides</h2>
-          <p>Accédez rapidement aux tâches les plus fréquentes.</p>
-          <div className="director-quick-actions">
-            <button type="button">
-              <span><UserOutlined /></span>
-              Ajouter un élève
-            </button>
-            <button type="button">
-              <span><CalendarOutlined /></span>
-              Gérer les classes
-            </button>
-            <button type="button">
-              <span><FileDoneOutlined /></span>
-              Voir les résultats
-            </button>
-          </div>
-        </Card>
+        <aside className="director-overview__aside">
+          <Card className="director-overview__setup">
+            <span className="director-dashboard__eyebrow">
+              Mise en place
+            </span>
+            <div className="director-overview__setup-title">
+              <div>
+                <h2>Configuration</h2>
+                <p>{completedSetup} étape{completedSetup !== 1 ? "s" : ""} sur 4</p>
+              </div>
+              <Progress
+                type="circle"
+                percent={setupProgress}
+                size={62}
+                strokeColor="#1769c2"
+              />
+            </div>
+            <div className="director-overview__checklist">
+              {setupItems.map((item) => (
+                <button
+                  type="button"
+                  key={item.label}
+                  className={item.ready ? "is-ready" : ""}
+                  onClick={() => navigate(item.route)}
+                >
+                  {item.ready ? (
+                    <CheckCircleFilled />
+                  ) : (
+                    <span className="director-overview__step-dot" />
+                  )}
+                  <span>{item.label}</span>
+                  <ArrowRightOutlined />
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="director-overview__quick">
+            <div className="director-overview__quick-icon">
+              <SettingOutlined />
+            </div>
+            <span>Accès rapide</span>
+            <h2>Votre école, simplement organisée.</h2>
+            <p>
+              Accédez aux espaces de gestion sans quitter votre tableau de bord.
+            </p>
+            <div>
+                <Button onClick={() => navigate(ROUTES.STUDENTS)}>
+                  Élèves
+                </Button>
+              <Button onClick={() => navigate(ROUTES.TEACHERS)}>
+                Enseignants
+              </Button>
+              <Button onClick={() => navigate(ROUTES.COURSES)}>
+                Cours
+              </Button>
+            </div>
+          </Card>
+        </aside>
       </section>
     </div>
   );

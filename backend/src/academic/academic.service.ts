@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { randomInt } from "node:crypto";
+import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { handlePrismaError } from "../common/prisma-errors";
 import {
@@ -24,10 +26,144 @@ const toBigInt = (id: number | string) => BigInt(id);
 const clean = (value?: string | null) => value?.trim() || undefined;
 const statusFromBoolean = (isActive?: boolean) =>
   isActive === false ? "INACTIF" : "ACTIF";
+const SCHOOL_CODE_CHARACTERS = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const generateSchoolCode = () =>
+  `PG${Array.from(
+    { length: 9 },
+    () => SCHOOL_CODE_CHARACTERS[randomInt(SCHOOL_CODE_CHARACTERS.length)],
+  ).join("")}`;
+const SCHOOL_PASSWORD_CHARACTERS =
+  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const generateSchoolPassword = () =>
+  Array.from(
+    { length: 12 },
+    () =>
+      SCHOOL_PASSWORD_CHARACTERS[
+        randomInt(SCHOOL_PASSWORD_CHARACTERS.length)
+      ],
+  ).join("");
 
 @Injectable()
 export class AcademicService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async getDirectorDashboard(schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const school = await this.prisma.ecoles.findUnique({
+      where: { id_ecole },
+      select: {
+        id_ecole: true,
+        nom_ecole: true,
+        code_ecole: true,
+        adresse: true,
+        ville: true,
+        telephone: true,
+        logo: true,
+      },
+    });
+
+    if (!school) {
+      throw new NotFoundException("École introuvable.");
+    }
+
+    const activeSchoolYear = await this.prisma.annees_scolaires.findFirst({
+      where: { id_ecole, est_active: true },
+      orderBy: { date_debut: "desc" },
+      select: {
+        id_annee_scolaire: true,
+        libelle: true,
+        date_debut: true,
+        date_fin: true,
+      },
+    });
+
+    const [studentCount, teacherCount, courseCount, classes] =
+      await Promise.all([
+        this.prisma.eleves.count({
+          where: { id_ecole, statut: "ACTIF" },
+        }),
+        this.prisma.professeurs.count({
+          where: { id_ecole, statut: "ACTIF" },
+        }),
+        this.prisma.cours.count({
+          where: { id_ecole, statut: "ACTIF" },
+        }),
+        this.prisma.classes.findMany({
+          where: { id_ecole, statut: "ACTIF" },
+          orderBy: { libelle: "asc" },
+          select: {
+            id_classe: true,
+            libelle: true,
+            code_classe: true,
+            capacite: true,
+            niveaux: { select: { libelle: true } },
+            options_scolaires: { select: { libelle: true } },
+            _count: {
+              select: {
+                inscriptions: {
+                  where: activeSchoolYear
+                    ? {
+                        id_annee_scolaire:
+                          activeSchoolYear.id_annee_scolaire,
+                        statut: "INSCRIT",
+                      }
+                    : { id_inscription: { equals: -1n } },
+                },
+              },
+            },
+          },
+        }),
+      ]);
+
+    return {
+      school: {
+        id: school.id_ecole.toString(),
+        name: school.nom_ecole,
+        code: school.code_ecole,
+        address: school.adresse,
+        city: school.ville,
+        phone: school.telephone,
+        logo: school.logo,
+      },
+      activeSchoolYear: activeSchoolYear
+        ? {
+            id: activeSchoolYear.id_annee_scolaire.toString(),
+            label: activeSchoolYear.libelle,
+            startsAt: activeSchoolYear.date_debut.toISOString(),
+            endsAt: activeSchoolYear.date_fin.toISOString(),
+          }
+        : null,
+      counts: {
+        students: studentCount,
+        classes: classes.length,
+        teachers: teacherCount,
+        courses: courseCount,
+      },
+      classes: classes.map((schoolClass) => ({
+        id: schoolClass.id_classe.toString(),
+        name: schoolClass.libelle,
+        code: schoolClass.code_classe,
+        level: schoolClass.niveaux.libelle,
+        option: schoolClass.options_scolaires?.libelle ?? null,
+        capacity: schoolClass.capacite,
+        students: schoolClass._count.inscriptions,
+      })),
+    };
+  }
+
+  private async generateUniqueSchoolCode() {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const code = generateSchoolCode();
+      const existingSchool = await this.prisma.ecoles.findUnique({
+        where: { code_ecole: code },
+        select: { id_ecole: true },
+      });
+
+      if (!existingSchool) return code;
+    }
+
+    throw new Error("Impossible de générer un code école unique.");
+  }
 
   async listSchools() {
     const schools = await this.prisma.ecoles.findMany({
@@ -38,13 +174,11 @@ export class AcademicService {
       id: school.id_ecole.toString(),
       name: school.nom_ecole,
       code: school.code_ecole,
+      establishmentCode: school.code_etablissement,
       address: school.adresse,
+      city: school.ville,
       phone: school.telephone,
-      email: school.email,
       logo: school.logo,
-      city: school.adresse ?? "",
-      country: "RDC",
-      directorId: "",
       isActive: school.statut === "ACTIF",
       createdAt: school.date_creation.toISOString(),
       updatedAt: school.date_mise_a_jour.toISOString(),
@@ -52,43 +186,84 @@ export class AcademicService {
   }
 
   async createSchool(dto: CreateSchoolDto) {
-    try {
-      const school = await this.prisma.ecoles.create({
-        data: {
-          nom_ecole: dto.name.trim(),
-          code_ecole: dto.code.trim().toUpperCase(),
-          adresse: clean(dto.address),
-          telephone: clean(dto.phone),
-          email: clean(dto.email)?.toLowerCase(),
-          logo: clean(dto.logo),
-          statut: statusFromBoolean(dto.isActive),
-        },
-      });
-      return this.findSchool(school.id_ecole.toString());
-    } catch (error) {
-      handlePrismaError(error);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const initialPassword = generateSchoolPassword();
+        const school = await this.prisma.ecoles.create({
+          data: {
+            nom_ecole: dto.name.trim(),
+            code_ecole: await this.generateUniqueSchoolCode(),
+            code_etablissement: clean(dto.establishmentCode)?.toUpperCase(),
+            mot_de_passe_hash: await bcrypt.hash(initialPassword, 12),
+            adresse: dto.address.trim(),
+            ville: dto.city.trim(),
+            telephone: dto.phone.trim(),
+            logo: clean(dto.logo),
+            statut: statusFromBoolean(dto.isActive),
+          },
+        });
+        return {
+          ...(await this.findSchool(school.id_ecole.toString())),
+          initialPassword,
+        };
+      } catch (error) {
+        const isSchoolCodeCollision =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "P2002";
+
+        if (!isSchoolCodeCollision || attempt === 4) {
+          handlePrismaError(error);
+        }
+      }
     }
   }
 
   async updateSchool(id: string, dto: UpdateSchoolDto) {
     await this.ensureSchool(id);
     try {
-      await this.prisma.ecoles.update({
+      const updatedSchool = await this.prisma.ecoles.update({
         where: { id_ecole: toBigInt(id) },
         data: {
           nom_ecole: dto.name.trim(),
-          code_ecole: dto.code.trim().toUpperCase(),
-          adresse: clean(dto.address),
-          telephone: clean(dto.phone),
-          email: clean(dto.email)?.toLowerCase(),
+          code_etablissement: clean(dto.establishmentCode)?.toUpperCase(),
+          adresse: dto.address.trim(),
+          ville: dto.city.trim(),
+          telephone: dto.phone.trim(),
           logo: clean(dto.logo),
           statut: statusFromBoolean(dto.isActive),
         },
       });
-      return this.findSchool(id);
+      return {
+        id: updatedSchool.id_ecole.toString(),
+        name: updatedSchool.nom_ecole,
+        code: updatedSchool.code_ecole,
+        establishmentCode: updatedSchool.code_etablissement,
+        address: updatedSchool.adresse,
+        city: updatedSchool.ville,
+        phone: updatedSchool.telephone,
+        isActive: updatedSchool.statut === "ACTIF",
+        updatedAt: updatedSchool.date_mise_a_jour.toISOString(),
+      };
     } catch (error) {
       handlePrismaError(error);
     }
+  }
+
+  async resetSchoolPassword(id: string) {
+    await this.ensureSchool(id);
+    const initialPassword = generateSchoolPassword();
+
+    await this.prisma.ecoles.update({
+      where: { id_ecole: toBigInt(id) },
+      data: {
+        mot_de_passe_hash: await bcrypt.hash(initialPassword, 12),
+        date_mise_a_jour: new Date(),
+      },
+    });
+
+    return { initialPassword };
   }
 
   async deleteSchool(id: string) {

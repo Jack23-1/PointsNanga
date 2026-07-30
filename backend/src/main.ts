@@ -1,10 +1,14 @@
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
+import * as cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useBodyParser("json", { limit: "5mb" });
+  app.use(cookieParser());
   const config = app.get(ConfigService);
   const frontendUrl = config.get<string>("FRONTEND_URL") ?? "http://localhost:5173";
   const allowedOrigins = new Set([

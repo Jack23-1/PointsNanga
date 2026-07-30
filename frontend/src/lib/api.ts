@@ -1,26 +1,20 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
-import { ROUTES } from '../config/constants';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const getLoginRouteFromStoredUser = () => {
-  const storedUser = localStorage.getItem('user');
+let refreshPromise: Promise<void> | null = null;
 
-  if (!storedUser) {
-    return ROUTES.LOGIN;
+const refreshAccessToken = async () => {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true })
+      .then(() => undefined)
+      .finally(() => {
+        refreshPromise = null;
+      });
   }
 
-  try {
-    const role = JSON.parse(storedUser)?.role;
-
-    if (role === 'super_admin') return ROUTES.SUPER_ADMIN_LOGIN;
-    if (role === 'director') return ROUTES.DIRECTOR_LOGIN;
-    if (role === 'teacher') return ROUTES.HOMEROOM_LOGIN;
-
-    return ROUTES.LOGIN;
-  } catch {
-    return ROUTES.LOGIN;
-  }
+  return refreshPromise;
 };
 
 class ApiClient {
@@ -29,38 +23,37 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
-    // Request interceptor to add auth token
-    this.client.interceptors.request.use(
-      (config) => {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => {
-        return Promise.reject(error);
-      }
-    );
-
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      async (error: AxiosError) => {
         const requestUrl = error.config?.url ?? '';
         const isLoginRequest = requestUrl.includes('/auth/login');
+        const isRefreshRequest = requestUrl.includes('/auth/refresh');
+        const originalRequest = error.config as
+          | (AxiosRequestConfig & { _retry?: boolean })
+          | undefined;
 
-        if (error.response?.status === 401 && !isLoginRequest) {
-          // Handle unauthorized - clear token and redirect to login
-          const loginRoute = getLoginRouteFromStoredUser();
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('user');
-          window.location.href = loginRoute;
+        if (
+          error.response?.status === 401 &&
+          !isLoginRequest &&
+          !isRefreshRequest &&
+          originalRequest &&
+          !originalRequest._retry
+        ) {
+          originalRequest._retry = true;
+          try {
+            await refreshAccessToken();
+            return this.client.request(originalRequest);
+          } catch {
+            // Let the caller decide how to surface the unauthorized state.
+          }
         }
         return Promise.reject(error);
       }

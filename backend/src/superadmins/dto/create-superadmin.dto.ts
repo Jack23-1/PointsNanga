@@ -19,4 +19,8 @@ export class CreateSuperAdminDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasFullAccess?: boolean;
 }

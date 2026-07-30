@@ -18,29 +18,28 @@ export class CreateSchoolDto {
   @MaxLength(150)
   name: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  establishmentCode?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  address: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  city: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(30)
-  code: string;
+  phone: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
-  address?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  phone?: string;
-
-  @IsOptional()
-  @IsEmail()
-  @MaxLength(150)
-  email?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
   logo?: string;
 
   @IsOptional()

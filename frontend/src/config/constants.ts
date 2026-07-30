@@ -4,6 +4,7 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/ap
 export const ROUTES = {
   LOGIN: '/login',
   SUPER_ADMIN_LOGIN: '/admin/login',
+  SUPER_ADMIN_RESET_PASSWORD: '/admin/reset-password',
   DIRECTOR_LOGIN: '/director/login',
   HOMEROOM_LOGIN: '/titulaire/login',
   DASHBOARD: '/dashboard',
@@ -26,3 +27,10 @@ export const ROLE_ROUTES = {
   teacher: ['/dashboard', '/grades', '/results'],
   student: ['/dashboard', '/results', '/bulletins'],
 } as const;
+
+export const getLoginRouteForRole = (role?: string) => {
+  if (role === 'super_admin') return ROUTES.SUPER_ADMIN_LOGIN;
+  if (role === 'director') return ROUTES.DIRECTOR_LOGIN;
+  if (role === 'teacher') return ROUTES.HOMEROOM_LOGIN;
+  return ROUTES.LOGIN;
+};

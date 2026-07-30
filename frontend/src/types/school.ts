@@ -2,12 +2,11 @@ export interface School {
   id: string;
   name: string;
   code: string;
+  establishmentCode?: string | null;
   address: string;
-  phone: string;
-  email: string;
-  directorId: string;
   city: string;
-  country: string;
+  phone: string;
+  logo?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -15,11 +14,8 @@ export interface School {
 
 export interface SchoolFormData {
   name: string;
-  code: string;
+  establishmentCode?: string;
   address: string;
-  phone: string;
-  email: string;
-  directorId: string;
   city: string;
-  country: string;
+  phone: string;
 }

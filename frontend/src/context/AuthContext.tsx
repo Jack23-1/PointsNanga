@@ -18,32 +18,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token and validate it
-    const token = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('user');
-    
-    if (token && storedUser) {
+    const syncUserFromStorage = () => {
+      const storedUser = localStorage.getItem('user');
+
+      if (!storedUser) {
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         setUser(JSON.parse(storedUser));
       } catch {
-        localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
+        setUser(null);
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+
+    syncUserFromStorage();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'user') {
+        syncUserFromStorage();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
     const response = await api.post<AuthResponse>('/auth/login', credentials);
-    const { user: userData, token } = response.data;
+    const { user: userData } = response.data;
     
-    localStorage.setItem('auth_token', token);
     localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('last_role', userData.role);
     setUser(userData);
   };
 
   const logout = () => {
-    localStorage.removeItem('auth_token');
+    void api.post('/auth/logout');
     localStorage.removeItem('user');
     setUser(null);
   };
@@ -51,6 +69,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateUser = (userData: User) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('last_role', userData.role);
   };
 
   const value: AuthContextType = {

@@ -2,6 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@n
 import { AcademicService } from "../academic/academic.service";
 import { CreateSchoolDto, UpdateSchoolDto } from "../academic/dto/academic.dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { PrimarySuperAdminGuard } from "../auth/primary-superadmin.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { SchoolsService } from "./schools.service";
 
 @Controller("schools")
@@ -17,19 +20,29 @@ export class SchoolsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, PrimarySuperAdminGuard)
+  @Roles("super_admin")
   create(@Body() dto: CreateSchoolDto) {
     return this.academicService.createSchool(dto);
   }
 
   @Patch(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("super_admin")
   update(@Param("id") id: string, @Body() dto: UpdateSchoolDto) {
     return this.academicService.updateSchool(id, dto);
   }
 
+  @Post(":id/reset-password")
+  @UseGuards(JwtAuthGuard, RolesGuard, PrimarySuperAdminGuard)
+  @Roles("super_admin")
+  resetPassword(@Param("id") id: string) {
+    return this.academicService.resetSchoolPassword(id);
+  }
+
   @Delete(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, PrimarySuperAdminGuard)
+  @Roles("super_admin")
   remove(@Param("id") id: string) {
     return this.academicService.deleteSchool(id);
   }

@@ -21,4 +21,8 @@ export class UpdateSuperAdminDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hasFullAccess?: boolean;
 }

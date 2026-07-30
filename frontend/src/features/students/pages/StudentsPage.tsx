@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   EyeOutlined,
+  BankOutlined,
   CalendarOutlined,
   FilterOutlined,
   HomeOutlined,
@@ -46,6 +47,7 @@ interface StudentRow {
 interface SchoolOption {
   id: string;
   name: string;
+  logo?: string | null;
 }
 
 const initialStudents: StudentRow[] = [];
@@ -74,6 +76,10 @@ const StudentsPage = () => {
   const [selectedClass, setSelectedClass] = useState("Toutes les classes");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm<StudentFormValues>();
+  const selectedSchoolId = Form.useWatch("schoolId", form);
+  const selectedSchool = schools.find(
+    (school) => school.id === selectedSchoolId,
+  );
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
 
   const loadStudents = async (showLoading = false) => {
@@ -99,12 +105,21 @@ const StudentsPage = () => {
     loadStudents(true);
     loadSchools();
 
-    const intervalId = window.setInterval(() => {
+    let active = true;
+    const refreshLists = () => {
+      if (!active) return;
       loadStudents();
       loadSchools();
-    }, 1000);
+    };
 
-    return () => window.clearInterval(intervalId);
+    window.addEventListener("focus", refreshLists);
+    document.addEventListener("visibilitychange", refreshLists);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshLists);
+      document.removeEventListener("visibilitychange", refreshLists);
+    };
   }, []);
 
   const filteredStudents = useMemo(() => {
@@ -314,7 +329,53 @@ const StudentsPage = () => {
           <Row gutter={14}>
             <Col span={12}>
               <Form.Item name="schoolId" label="École" rules={[{ required: true, message: "Choisissez l'école." }]}>
-                <Select options={schools.map((school) => ({ value: school.id, label: school.name }))} />
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  className="super-admin-dashboard__grade-filter super-admin-dashboard__school-filter"
+                  classNames={{
+                    popup: {
+                      root: "super-admin-dashboard__grade-filter-popup super-admin-dashboard__school-filter-popup",
+                    },
+                  }}
+                  prefix={
+                    selectedSchool ? (
+                      <span className="super-admin-dashboard__school-filter-prefix">
+                        {selectedSchool.logo ? (
+                          <img src={selectedSchool.logo} alt="" />
+                        ) : (
+                          selectedSchool.name.slice(0, 2).toUpperCase()
+                        )}
+                      </span>
+                    ) : (
+                      <BankOutlined />
+                    )
+                  }
+                  options={schools.map((school) => ({
+                    value: school.id,
+                    label: school.name,
+                  }))}
+                  optionRender={(option) => {
+                    const school = schools.find(
+                      (item) => item.id === option.value,
+                    );
+                    return (
+                      <div className="super-admin-dashboard__school-filter-option">
+                        <span className="super-admin-dashboard__school-filter-logo">
+                          {school?.logo ? (
+                            <img src={school.logo} alt="" />
+                          ) : (
+                            school?.name.slice(0, 2).toUpperCase() ?? "ÉC"
+                          )}
+                        </span>
+                        <span>
+                          <strong>{school?.name ?? String(option.label)}</strong>
+                          <small>Établissement autorisé</small>
+                        </span>
+                      </div>
+                    );
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>

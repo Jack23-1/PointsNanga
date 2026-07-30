@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { AcademicService } from "./academic.service";
 import {
   AssignStudentDto,
@@ -19,9 +21,25 @@ import {
 } from "./dto/academic.dto";
 
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles("director", "super_admin")
 export class AcademicController {
   constructor(private readonly academicService: AcademicService) {}
+
+  @Get("dashboard/director")
+  @Roles("director")
+  directorDashboard(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    const schoolId = request.user?.schoolId;
+    if (!schoolId) {
+      throw new ForbiddenException(
+        "Aucune école n'est associée à cette session.",
+      );
+    }
+
+    return this.academicService.getDirectorDashboard(String(schoolId));
+  }
 
   @Get("levels")
   listLevels(@Query("schoolId") schoolId?: string) {

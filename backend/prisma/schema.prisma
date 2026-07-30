@@ -14,6 +14,9 @@ model SuperAdmin {
   firstName    String   @map("first_name")
   lastName     String   @map("last_name")
   isActive     Boolean  @default(true) @map("is_active")
+  hasFullAccess Boolean @default(false) @map("has_full_access")
+  resetTokenHash String? @unique @map("reset_token_hash")
+  resetTokenExpiresAt DateTime? @map("reset_token_expires_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -188,10 +191,13 @@ model ecoles {
   id_ecole                BigInt                    @id @default(autoincrement())
   nom_ecole               String                    @db.VarChar(150)
   code_ecole              String                    @unique @db.VarChar(30)
+  code_etablissement      String?                   @db.VarChar(30)
+  mot_de_passe_hash       String?
   adresse                 String?                   @db.VarChar(255)
+  ville                   String                    @db.VarChar(100)
   telephone               String?                   @db.VarChar(30)
   email                   String?                   @unique @db.VarChar(150)
-  logo                    String?                   @db.VarChar(255)
+  logo                    String?
   statut                  statut_general            @default(ACTIF)
   date_creation           DateTime                  @default(now()) @db.Timestamptz(6)
   date_mise_a_jour        DateTime                  @default(now()) @db.Timestamptz(6)

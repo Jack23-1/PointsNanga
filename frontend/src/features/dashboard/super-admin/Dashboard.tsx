@@ -9,7 +9,6 @@ import {
   Input,
   Modal,
   Row,
-  Segmented,
   Select,
   Space,
   Statistic,
@@ -48,6 +47,7 @@ import { api } from "../../../lib/api";
 import educationPartnerAd from "../../../assets/education-partner-ad.png";
 import studentsPhoto from "../../../assets/eleves.jpeg";
 import classroomPhoto from "../../../assets/student-login-background.jpg";
+import { useAuth } from "../../../hooks/useAuth";
 
 type Workspace =
   | "Aperçu"
@@ -68,6 +68,7 @@ type School = {
   joined: string;
   status: "active" | "suspended";
   initials: string;
+  logo?: string | null;
 };
 
 type AcademicRecord = {
@@ -101,17 +102,17 @@ type SuperAdminRecord = {
   firstName: string;
   lastName: string;
   email: string;
-  passwordHash: string;
+  hasFullAccess: boolean;
   status: "Actif" | "Suspendu";
 };
 
 type SuperAdminApiRecord = {
   id: string;
   email: string;
-  passwordHash: string;
   firstName: string;
   lastName: string;
   isActive: boolean;
+  hasFullAccess: boolean;
 };
 
 type SchoolApiRecord = {
@@ -119,6 +120,7 @@ type SchoolApiRecord = {
   name: string;
   address: string | null;
   phone: string | null;
+  logo?: string | null;
   isActive: boolean;
   createdAt: string;
 };
@@ -168,7 +170,7 @@ const mapSuperAdminFromApi = (
   firstName: superAdmin.firstName,
   lastName: superAdmin.lastName,
   email: superAdmin.email,
-  passwordHash: superAdmin.passwordHash,
+  hasFullAccess: superAdmin.hasFullAccess,
   status: superAdmin.isActive ? "Actif" : "Suspendu",
 });
 
@@ -197,9 +199,12 @@ const mapSchoolFromApi = (school: SchoolApiRecord): School => ({
   }).format(new Date(school.createdAt)),
   status: school.isActive ? "active" : "suspended",
   initials: getInitials(school.name),
+  logo: school.logo,
 });
 
 const SuperAdminDashboard = () => {
+  const { user } = useAuth();
+  const canCreateSuperAdmin = Boolean(user?.hasFullAccess);
   const navigate = useNavigate();
   const location = useLocation();
   const [workspace, setWorkspace] = useState<Workspace>("Aperçu");
@@ -218,7 +223,10 @@ const SuperAdminDashboard = () => {
   const [confirmUserAction, setConfirmUserAction] =
     useState<UserConfirmAction | null>(null);
   const [superAdminForm, setSuperAdminForm] = useState<
-    Pick<SuperAdminRecord, "firstName" | "lastName" | "email" | "status"> & {
+    Pick<
+      SuperAdminRecord,
+      "firstName" | "lastName" | "email" | "status" | "hasFullAccess"
+    > & {
       password: string;
     }
   >({
@@ -227,8 +235,12 @@ const SuperAdminDashboard = () => {
     email: "",
     password: "",
     status: "Actif",
+    hasFullAccess: false,
   });
   const [gradeSearch, setGradeSearch] = useState("");
+  const [academicSchoolFilter, setAcademicSchoolFilter] = useState<
+    string | undefined
+  >();
   const [gradeSchoolFilter, setGradeSchoolFilter] = useState<
     string | undefined
   >();
@@ -245,14 +257,37 @@ const SuperAdminDashboard = () => {
       gradeManagementRecords.map((record) => [record.key, record.isValidated]),
     ),
   );
+  const selectedGradeSchool = schools.find(
+    (school) => school.name === gradeSchoolFilter,
+  );
+  const selectedAcademicSchool = schools.find(
+    (school) => school.name === academicSchoolFilter,
+  );
 
   useEffect(() => {
-    setWorkspace(
-      new URLSearchParams(location.search).get("workspace") === "grades"
-        ? "Gestion de cotes"
-        : "Aperçu",
+    const requestedWorkspace = new URLSearchParams(location.search).get(
+      "workspace",
     );
-  }, [location.search]);
+    if (!canCreateSuperAdmin) {
+      if (requestedWorkspace !== "grades" && requestedWorkspace !== "users") {
+        navigate(`${ROUTES.DASHBOARD}?workspace=grades`, { replace: true });
+        return;
+      }
+      setWorkspace(
+        requestedWorkspace === "users" ? "Utilisateurs" : "Gestion de cotes",
+      );
+      return;
+    }
+    setWorkspace(
+      requestedWorkspace === "grades"
+        ? "Gestion de cotes"
+        : requestedWorkspace === "results"
+          ? "Résultats"
+        : requestedWorkspace === "users"
+          ? "Utilisateurs"
+          : "Aperçu",
+    );
+  }, [location.search, canCreateSuperAdmin, navigate]);
 
   const loadSuperAdmins = async () => {
     setIsLoadingSuperAdmins(true);
@@ -279,12 +314,30 @@ const SuperAdminDashboard = () => {
   };
 
   useEffect(() => {
-    loadSuperAdmins();
-    loadSchools(true);
-    const intervalId = window.setInterval(() => loadSchools(), 1000);
+    let active = true;
 
-    return () => window.clearInterval(intervalId);
+    const refreshSchools = () => {
+      if (active) {
+        void loadSchools();
+      }
+    };
+
+    void loadSchools(true);
+    window.addEventListener("focus", refreshSchools);
+    document.addEventListener("visibilitychange", refreshSchools);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshSchools);
+      document.removeEventListener("visibilitychange", refreshSchools);
+    };
   }, []);
+
+  useEffect(() => {
+    if (workspace === "Utilisateurs") {
+      loadSuperAdmins();
+    }
+  }, [workspace]);
 
   const filteredSuperAdmins = useMemo(() => {
     const query = superAdminSearch.trim().toLocaleLowerCase();
@@ -301,6 +354,12 @@ const SuperAdminDashboard = () => {
   }, [superAdminSearch, superAdmins]);
 
   const openSuperAdminModal = (admin?: SuperAdminRecord) => {
+    if (!canCreateSuperAdmin) {
+      message.warning(
+        "Seul le superadmin principal peut gérer les comptes superadmins.",
+      );
+      return;
+    }
     setEditingSuperAdmin(admin ?? null);
     setSuperAdminForm(
       admin
@@ -310,6 +369,7 @@ const SuperAdminDashboard = () => {
             email: admin.email,
             password: "",
             status: admin.status,
+            hasFullAccess: admin.hasFullAccess,
           }
         : {
             firstName: "",
@@ -317,12 +377,19 @@ const SuperAdminDashboard = () => {
             email: "",
             password: "",
             status: "Actif",
+            hasFullAccess: false,
           },
     );
     setSuperAdminModalOpen(true);
   };
 
   const requestSaveSuperAdmin = () => {
+    if (!editingSuperAdmin && !canCreateSuperAdmin) {
+      message.warning(
+        "Seul le superadmin principal peut ajouter un autre superadmin.",
+      );
+      return;
+    }
     if (
       !superAdminForm.firstName.trim() ||
       !superAdminForm.lastName.trim() ||
@@ -333,6 +400,7 @@ const SuperAdminDashboard = () => {
       return;
     }
 
+    setSuperAdminModalOpen(false);
     setConfirmUserAction({ type: editingSuperAdmin ? "update" : "create" });
   };
 
@@ -345,6 +413,7 @@ const SuperAdminDashboard = () => {
           lastName: superAdminForm.lastName,
           email: superAdminForm.email,
           isActive: superAdminForm.status === "Actif",
+          hasFullAccess: superAdminForm.hasFullAccess,
           ...(superAdminForm.password.trim()
             ? { password: superAdminForm.password }
             : {}),
@@ -357,6 +426,7 @@ const SuperAdminDashboard = () => {
           email: superAdminForm.email,
           password: superAdminForm.password,
           isActive: superAdminForm.status === "Actif",
+          hasFullAccess: superAdminForm.hasFullAccess,
         });
         message.success("Superadmin ajouté dans la base.");
       }
@@ -367,12 +437,19 @@ const SuperAdminDashboard = () => {
       message.error(
         "Enregistrement impossible. Vérifiez que le backend est lancé et que l'e-mail n'existe pas déjà.",
       );
+      setSuperAdminModalOpen(true);
     } finally {
       setIsSavingSuperAdmin(false);
     }
   };
 
   const deleteSuperAdmin = async (adminId: string) => {
+    if (!canCreateSuperAdmin) {
+      message.warning(
+        "Seul le superadmin principal peut supprimer un superadmin.",
+      );
+      return;
+    }
     try {
       await api.delete(`/superadmins/${adminId}`);
       await loadSuperAdmins();
@@ -910,12 +987,55 @@ const SuperAdminDashboard = () => {
         <div className="super-admin-dashboard__table-tools">
           <Input.Search placeholder="Élève, matricule, école..." allowClear />
           <Select
-            placeholder="École"
+            className="super-admin-dashboard__grade-filter super-admin-dashboard__school-filter"
+            classNames={{
+              popup: {
+                root: "super-admin-dashboard__grade-filter-popup super-admin-dashboard__school-filter-popup",
+              },
+            }}
+            placeholder="Choisir une école"
             allowClear
+            showSearch
+            optionFilterProp="label"
+            value={academicSchoolFilter}
+            onChange={setAcademicSchoolFilter}
+            prefix={
+              selectedAcademicSchool ? (
+                <span className="super-admin-dashboard__school-filter-prefix">
+                  {selectedAcademicSchool.logo ? (
+                    <img src={selectedAcademicSchool.logo} alt="" />
+                  ) : (
+                    selectedAcademicSchool.initials
+                  )}
+                </span>
+              ) : (
+                <BankOutlined />
+              )
+            }
             options={schools.map((school) => ({
               label: school.name,
               value: school.name,
             }))}
+            optionRender={(option) => {
+              const school = schools.find(
+                (item) => item.name === option.value,
+              );
+              return (
+                <div className="super-admin-dashboard__school-filter-option">
+                  <span className="super-admin-dashboard__school-filter-logo">
+                    {school?.logo ? (
+                      <img src={school.logo} alt="" />
+                    ) : (
+                      school?.initials ?? "ÉC"
+                    )}
+                  </span>
+                  <span>
+                    <strong>{school?.name ?? String(option.label)}</strong>
+                    <small>{school?.address ?? "Établissement autorisé"}</small>
+                  </span>
+                </div>
+              );
+            }}
           />
           <Select
             placeholder="Période"
@@ -1020,22 +1140,60 @@ const SuperAdminDashboard = () => {
             onChange={(event) => setGradeSearch(event.target.value)}
           />
           <Select
-            className="super-admin-dashboard__grade-filter"
+            className="super-admin-dashboard__grade-filter super-admin-dashboard__school-filter"
             classNames={{
-              popup: { root: "super-admin-dashboard__grade-filter-popup" },
+              popup: {
+                root: "super-admin-dashboard__grade-filter-popup super-admin-dashboard__school-filter-popup",
+              },
             }}
-            placeholder="École"
+            placeholder="Choisir une école"
             allowClear
             showSearch
             optionFilterProp="label"
-            prefix={<BankOutlined />}
-            style={{ width: 240 }}
+            prefix={
+              selectedGradeSchool ? (
+                <span className="super-admin-dashboard__school-filter-prefix">
+                  {selectedGradeSchool.logo ? (
+                    <img src={selectedGradeSchool.logo} alt="" />
+                  ) : (
+                    selectedGradeSchool.initials
+                  )}
+                </span>
+              ) : (
+                <BankOutlined />
+              )
+            }
+            style={{ width: 285 }}
             value={gradeSchoolFilter}
             onChange={(value) => {
               setGradeSchoolFilter(value);
               setGradeClassFilter(undefined);
             }}
             options={schools.map((school) => ({ label: school.name, value: school.name }))}
+            optionRender={(option) => {
+              const school = schools.find(
+                (item) => item.name === option.value,
+              );
+              return (
+                <div className="super-admin-dashboard__school-filter-option">
+                  <span className="super-admin-dashboard__school-filter-logo">
+                    {school?.logo ? (
+                      <img src={school.logo} alt="" />
+                    ) : (
+                      school?.initials ?? "ÉC"
+                    )}
+                  </span>
+                  <span>
+                    <strong>{school?.name ?? String(option.label)}</strong>
+                    <small>
+                      {school?.address && school.address !== "—"
+                        ? school.address
+                        : "Établissement autorisé"}
+                    </small>
+                  </span>
+                </div>
+              );
+            }}
           />
           <Select
             className="super-admin-dashboard__grade-filter"
@@ -1095,13 +1253,24 @@ const SuperAdminDashboard = () => {
             Consultez, ajoutez, modifiez et supprimez les comptes superadmins.
           </Text>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => openSuperAdminModal()}
+        <Tooltip
+          title={
+            canCreateSuperAdmin
+              ? ""
+              : "Seul le superadmin principal peut ajouter un compte"
+          }
         >
-          Ajouter un superadmin
-        </Button>
+          <span>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={!canCreateSuperAdmin}
+              onClick={() => openSuperAdminModal()}
+            >
+              Ajouter un superadmin
+            </Button>
+          </span>
+        </Tooltip>
       </div>
       <Row
         gutter={[18, 18]}
@@ -1169,12 +1338,21 @@ const SuperAdminDashboard = () => {
             },
             { title: "E-mail", dataIndex: "email" },
             {
-              title: "Hash du mot de passe",
-              dataIndex: "passwordHash",
-              render: (passwordHash: string) => (
-                <code className="super-admin-dashboard__password">
-                  {passwordHash}
-                </code>
+              title: "Niveau d’accès",
+              dataIndex: "hasFullAccess",
+              render: (hasFullAccess: boolean) => (
+                <Tag
+                  color={hasFullAccess ? "green" : "blue"}
+                  icon={
+                    hasFullAccess ? (
+                      <SafetyCertificateOutlined />
+                    ) : (
+                      <UserOutlined />
+                    )
+                  }
+                >
+                  {hasFullAccess ? "Accès complet" : "Accès limité"}
+                </Tag>
               ),
             },
             {
@@ -1200,6 +1378,7 @@ const SuperAdminDashboard = () => {
                   <Button
                     type="link"
                     icon={<EditOutlined />}
+                    disabled={!canCreateSuperAdmin}
                     onClick={() => openSuperAdminModal(user)}
                   >
                     Modifier
@@ -1208,6 +1387,7 @@ const SuperAdminDashboard = () => {
                     type="link"
                     danger
                     icon={<DeleteOutlined />}
+                    disabled={!canCreateSuperAdmin}
                     onClick={() =>
                       setConfirmUserAction({ type: "delete", admin: user })
                     }
@@ -1251,19 +1431,6 @@ const SuperAdminDashboard = () => {
 
   return (
     <div className="super-admin-dashboard">
-      <div className="super-admin-dashboard__topbar">
-        <Segmented
-          value={workspace}
-          onChange={(value) => setWorkspace(value as Workspace)}
-          options={[
-            "Aperçu",
-            "Écoles",
-            "Gestion de cotes",
-            "Résultats",
-            "Utilisateurs",
-          ]}
-        />
-      </div>
       <section className="super-admin-dashboard__hero super-admin-dashboard__hero--command">
         <div className="super-admin-dashboard__hero-copy">
           <Title level={1}>Bonjour, Administrateur</Title>
@@ -1292,15 +1459,33 @@ const SuperAdminDashboard = () => {
         confirmLoading={isSavingSuperAdmin}
         okText={editingSuperAdmin ? "Enregistrer" : "Ajouter"}
         cancelText="Annuler"
-        title={
-          editingSuperAdmin ? "Modifier le superadmin" : "Ajouter un superadmin"
-        }
+        title={null}
         centered
+        width={620}
+        className="super-admin-dashboard__user-modal"
       >
+        <div className="super-admin-dashboard__user-form-heading">
+          <div className="super-admin-dashboard__user-form-icon">
+            <UserSwitchOutlined />
+          </div>
+          <div>
+            <span>Comptes et permissions</span>
+            <Title level={3}>
+              {editingSuperAdmin
+                ? "Modifier le superadmin"
+                : "Ajouter un superadmin"}
+            </Title>
+            <Text>
+              Renseignez les informations du compte et choisissez précisément
+              son niveau d’accès.
+            </Text>
+          </div>
+        </div>
         <div className="super-admin-dashboard__user-form">
-          <label>
-            <span>Prénom</span>
+          <label className="super-admin-dashboard__user-field">
+            <span>Prénom <b>*</b></span>
             <Input
+              placeholder="Ex. Jacques"
               value={superAdminForm.firstName}
               onChange={(event) =>
                 setSuperAdminForm((currentForm) => ({
@@ -1310,9 +1495,10 @@ const SuperAdminDashboard = () => {
               }
             />
           </label>
-          <label>
-            <span>Nom</span>
+          <label className="super-admin-dashboard__user-field">
+            <span>Nom <b>*</b></span>
             <Input
+              placeholder="Ex. Bakole"
               value={superAdminForm.lastName}
               onChange={(event) =>
                 setSuperAdminForm((currentForm) => ({
@@ -1322,10 +1508,11 @@ const SuperAdminDashboard = () => {
               }
             />
           </label>
-          <label>
-            <span>E-mail</span>
+          <label className="super-admin-dashboard__user-field super-admin-dashboard__user-field--wide">
+            <span>Adresse e-mail <b>*</b></span>
             <Input
               type="email"
+              placeholder="administrateur@exemple.com"
               value={superAdminForm.email}
               onChange={(event) =>
                 setSuperAdminForm((currentForm) => ({
@@ -1335,11 +1522,11 @@ const SuperAdminDashboard = () => {
               }
             />
           </label>
-          <label>
+          <label className="super-admin-dashboard__user-field">
             <span>
               {editingSuperAdmin
                 ? "Nouveau mot de passe"
-                : "Mot de passe"}
+                : "Mot de passe *"}
             </span>
             <Input.Password
               value={superAdminForm.password}
@@ -1356,7 +1543,7 @@ const SuperAdminDashboard = () => {
               }
             />
           </label>
-          <label>
+          <label className="super-admin-dashboard__user-field">
             <span>Statut</span>
             <Select
               value={superAdminForm.status}
@@ -1372,11 +1559,43 @@ const SuperAdminDashboard = () => {
               }))}
             />
           </label>
+          <label className="super-admin-dashboard__access-card">
+            <Checkbox
+              checked={superAdminForm.hasFullAccess}
+              disabled={
+                editingSuperAdmin?.email === "elpulgabakole@gmail.com"
+              }
+              onChange={(event) =>
+                setSuperAdminForm((currentForm) => ({
+                  ...currentForm,
+                  hasFullAccess: event.target.checked,
+                }))
+              }
+            />
+            <span className="super-admin-dashboard__access-card-icon">
+              <SafetyCertificateOutlined />
+            </span>
+            <span className="super-admin-dashboard__access-card-copy">
+              <strong>Accès complet à la plateforme</strong>
+              <small>
+                Autorise la gestion des écoles, des comptes et des paramètres
+                sensibles, comme le superadmin principal.
+              </small>
+            </span>
+          </label>
         </div>
       </Modal>
       <Modal
         open={Boolean(confirmUserActionText)}
-        onCancel={() => setConfirmUserAction(null)}
+        onCancel={() => {
+          if (
+            confirmUserAction?.type === "create" ||
+            confirmUserAction?.type === "update"
+          ) {
+            setSuperAdminModalOpen(true);
+          }
+          setConfirmUserAction(null);
+        }}
         onOk={handleConfirmUserAction}
         confirmLoading={isSavingSuperAdmin}
         okText={confirmUserActionText?.actionLabel}

@@ -14,6 +14,7 @@ import type { AuthResponse } from "../../../types";
 import logo from "../../../assets/logo.png";
 import mobileBackground from "../../../assets/eleves.png";
 import LogoLoader from "../../../components/common/LogoLoader";
+import { Button, Input, Modal, message } from "antd";
 
 export default function SuperAdminLogin() {
   const navigate = useNavigate();
@@ -25,6 +26,28 @@ export default function SuperAdminLogin() {
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [destinationRoute, setDestinationRoute] = useState<string>(
+    ROUTES.DASHBOARD,
+  );
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [isSendingReset, setIsSendingReset] = useState(false);
+
+  const requestPasswordReset = async () => {
+    if (!forgotEmail.trim()) return;
+    setIsSendingReset(true);
+    try {
+      await api.post("/auth/forgot-password", { email: forgotEmail.trim() });
+      message.success(
+        "Si ce compte existe, un lien de réinitialisation a été envoyé.",
+      );
+      setForgotOpen(false);
+    } catch {
+      message.error("Impossible d’envoyer l’e-mail pour le moment.");
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,13 +64,17 @@ export default function SuperAdminLogin() {
         password,
       });
 
-      localStorage.setItem("auth_token", response.data.token);
       if (rememberMe) {
         localStorage.setItem("super_admin_email", email.trim());
       } else {
         localStorage.removeItem("super_admin_email");
       }
       updateUser(response.data.user);
+      setDestinationRoute(
+        response.data.user.hasFullAccess
+          ? ROUTES.DASHBOARD
+          : `${ROUTES.DASHBOARD}?workspace=grades`,
+      );
 
     } catch (error) {
       setIsPageTransitioning(false);
@@ -94,7 +121,16 @@ export default function SuperAdminLogin() {
             </div>
             <div className="premium-login__options">
               <label className="premium-login__remember"><input type="checkbox" disabled={isLoading} checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>Se souvenir de moi</span></label>
-              <a href="#forgot-password">Mot de passe oublié ?</a>
+              <a
+                href="#forgot-password"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setForgotEmail(email);
+                  setForgotOpen(true);
+                }}
+              >
+                Mot de passe oublié ?
+              </a>
             </div>
             <button type="submit" disabled={isLoading} className="premium-login__submit">
               {isLoading ? <><span className="premium-login__spinner" /> Vérification…</> : "Se connecter"}
@@ -104,12 +140,39 @@ export default function SuperAdminLogin() {
       </section>
       {isPageTransitioning && (
         <LogoLoader
-          onComplete={() => navigate(ROUTES.DASHBOARD)}
+          onComplete={() => navigate(destinationRoute)}
           duration={2000}
           transparent
           label="Connexion..."
         />
       )}
+      <Modal
+        open={forgotOpen}
+        title="Réinitialiser le mot de passe"
+        onCancel={() => setForgotOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setForgotOpen(false)}>
+            Annuler
+          </Button>,
+          <Button
+            key="send"
+            type="primary"
+            loading={isSendingReset}
+            onClick={requestPasswordReset}
+          >
+            Envoyer le lien
+          </Button>,
+        ]}
+      >
+        <p>Saisissez l’adresse e-mail de votre compte superadmin.</p>
+        <Input
+          type="email"
+          value={forgotEmail}
+          onChange={(event) => setForgotEmail(event.target.value)}
+          placeholder="administrateur@gmail.com"
+          onPressEnter={requestPasswordReset}
+        />
+      </Modal>
     </main>
   );
 }

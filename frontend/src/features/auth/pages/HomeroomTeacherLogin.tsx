@@ -22,6 +22,7 @@ import LogoLoader from "../../../components/common/LogoLoader";
 type SchoolOption = {
   id: string;
   name: string;
+  logo?: string | null;
 };
 
 export default function HomeroomTeacherLogin() {
@@ -37,6 +38,7 @@ export default function HomeroomTeacherLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const selectedSchool = schools.find((school) => school.name === schoolName);
   const [showPassword, setShowPassword] = useState(false);
   const schoolPickerRef = useRef<HTMLDivElement>(null);
   const schoolTriggerRef = useRef<HTMLButtonElement>(null);
@@ -134,7 +136,6 @@ export default function HomeroomTeacherLogin() {
         password,
       });
 
-      localStorage.setItem("auth_token", response.data.token);
       if (rememberMe) {
         localStorage.setItem("titulaire_school", schoolName);
         localStorage.setItem("titulaire_matricule", matricule.trim());
@@ -213,7 +214,11 @@ export default function HomeroomTeacherLogin() {
                 onClick={() => setIsSchoolMenuOpen((isOpen) => !isOpen)}
               >
                 <span className="premium-login__director-school-icon">
-                  <BankOutlined aria-hidden="true" />
+                  {selectedSchool?.logo ? (
+                    <img src={selectedSchool.logo} alt="" />
+                  ) : (
+                    <BankOutlined aria-hidden="true" />
+                  )}
                 </span>
                 <span className="premium-login__director-school-value">
                   <small>Établissement</small>
@@ -294,12 +299,20 @@ export default function HomeroomTeacherLogin() {
                         }}
                       >
                         <span className="premium-login__director-school-monogram">
-                          {school.name
-                            .split(" ")
-                            .filter((word) => word.length > 2)
-                            .slice(0, 2)
-                            .map((word) => word[0])
-                            .join("")}
+                          {school.logo ? (
+                            <img
+                              src={school.logo}
+                              alt=""
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                          ) : (
+                            school.name
+                              .split(" ")
+                              .filter((word) => word.length > 2)
+                              .slice(0, 2)
+                              .map((word) => word[0])
+                              .join("")
+                          )}
                         </span>
                         <span>
                           <strong>{school.name}</strong>

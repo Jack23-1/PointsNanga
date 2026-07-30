@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: "Kreon", Georgia, serif;
+  font-family: "Playwrite NZ Basic", cursive;
   line-height: 1.5;
   font-weight: 400;
   color: #0f172a;
@@ -22,6 +22,11 @@ body,
   width: 100%;
   min-width: 320px;
   min-height: 100vh;
+}
+
+body,
+body * {
+  font-family: "Playwrite NZ Basic", cursive;
 }
 
 body {

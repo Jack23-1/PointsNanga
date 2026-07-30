@@ -47,6 +47,33 @@ const Sidebar: React.FC = () => {
 
   const getMenuItems = () => {
     if (user?.role === "super_admin") {
+      const isPrimarySuperAdmin = Boolean(user.hasFullAccess);
+      if (!isPrimarySuperAdmin) {
+        return [
+          {
+            key: "super-admin-grades",
+            icon: <BookOutlined />,
+            label: "Gestion de cotes",
+            onClick: () =>
+              handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
+          },
+          {
+            key: "super-admin-users",
+            icon: <TeamOutlined />,
+            label: "Gestion des utilisateurs",
+            onClick: () =>
+              handleNavigation(`${ROUTES.DASHBOARD}?workspace=users`),
+          },
+          {
+            key: "logout",
+            icon: <LogoutOutlined />,
+            label: "Déconnexion",
+            onClick: handleLogout,
+            danger: true,
+          },
+        ];
+      }
+
       return [
         {
           key: ROUTES.DASHBOARD,
@@ -65,6 +92,12 @@ const Sidebar: React.FC = () => {
           icon: <BookOutlined />,
           label: "Gestion de cotes",
           onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
+        },
+        {
+          key: "super-admin-users",
+          icon: <TeamOutlined />,
+          label: "Gestion des utilisateurs",
+          onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=users`),
         },
         {
           key: "logout",
@@ -227,8 +260,10 @@ const Sidebar: React.FC = () => {
         />
       )}
       <Sider
-        className={user?.role === "director" ? "director-sidebar" : undefined}
-        width={250}
+        className={`app-sidebar app-sidebar--${user?.role ?? "guest"}${
+          user?.role === "director" ? " director-sidebar" : ""
+        }`}
+        width={285}
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
@@ -243,7 +278,20 @@ const Sidebar: React.FC = () => {
         <div className="sidebar-brand">
           <img src={brandLogo} alt="Points Nanga" />
         </div>
+        <div className="sidebar-context">
+          <span>Espace de travail</span>
+          <strong>
+            {user?.role === "super_admin"
+              ? "Super administration"
+              : user?.role === "director"
+                ? "Direction"
+                : user?.role === "teacher"
+                  ? "Enseignement"
+                  : "Portail étudiant"}
+          </strong>
+        </div>
         <Menu
+          className="sidebar-navigation"
           mode="inline"
           selectedKeys={[
             user?.role !== "director" && location.pathname === ROUTES.STUDENTS
@@ -253,6 +301,9 @@ const Sidebar: React.FC = () => {
               : location.pathname === ROUTES.DASHBOARD &&
                   location.search === "?workspace=grades"
                 ? "super-admin-grades"
+                : location.pathname === ROUTES.DASHBOARD &&
+                    location.search === "?workspace=users"
+                  ? "super-admin-users"
                 : location.pathname,
           ]}
           items={getMenuItems()}

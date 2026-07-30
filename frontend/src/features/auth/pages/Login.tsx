@@ -188,7 +188,6 @@ export default function Login() {
         password,
       });
 
-      localStorage.setItem("auth_token", response.data.token);
       localStorage.setItem("student_period", period);
       updateUser(response.data.user);
 

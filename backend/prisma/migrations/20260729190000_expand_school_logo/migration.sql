@@ -1,0 +1,2 @@
+ALTER TABLE "ecoles"
+ALTER COLUMN "logo" TYPE TEXT;

@@ -30,6 +30,7 @@ const directorAdSlides = [
 type SchoolOption = {
   id: string;
   name: string;
+  logo?: string | null;
 };
 
 export default function DirectorLogin() {
@@ -37,7 +38,7 @@ export default function DirectorLogin() {
   const { updateUser } = useAuth();
   const [schoolName, setSchoolName] = useState("");
   const [schools, setSchools] = useState<SchoolOption[]>([]);
-  const [email, setEmail] = useState("");
+  const [schoolCode, setSchoolCode] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -46,6 +47,7 @@ export default function DirectorLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const selectedSchool = schools.find((school) => school.name === schoolName);
   const schoolPickerRef = useRef<HTMLDivElement>(null);
   const schoolTriggerRef = useRef<HTMLButtonElement>(null);
   const schoolSearchRef = useRef<HTMLInputElement>(null);
@@ -150,7 +152,7 @@ export default function DirectorLogin() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!schoolName || !email.trim() || !password) {
+    if (!schoolName || !schoolCode.trim() || !password) {
       setErrorMsg("Veuillez renseigner tous les champs obligatoires.");
       return;
     }
@@ -163,21 +165,20 @@ export default function DirectorLogin() {
       const response = await api.post<AuthResponse>("/auth/login", {
         role: "director",
         schoolName,
-        email: email.trim(),
+        matricule: schoolCode.trim().toUpperCase(),
         password,
       });
 
-      localStorage.setItem("auth_token", response.data.token);
       if (rememberMe) {
-        localStorage.setItem("director_school", schoolName);
+        localStorage.setItem("director_school_code", schoolCode);
       } else {
-        localStorage.removeItem("director_school");
+        localStorage.removeItem("director_school_code");
       }
 
       updateUser(response.data.user);
     } catch {
       setIsPageTransitioning(false);
-      setErrorMsg("École, e-mail ou mot de passe incorrect.");
+      setErrorMsg("Code établissement ou mot de passe incorrect.");
     } finally {
       setIsLoading(false);
     }
@@ -238,7 +239,11 @@ export default function DirectorLogin() {
                     onClick={() => setIsSchoolMenuOpen((isOpen) => !isOpen)}
                   >
                     <span className="premium-login__director-school-icon">
-                      <BankOutlined aria-hidden="true" />
+                      {selectedSchool?.logo ? (
+                        <img src={selectedSchool.logo} alt="" />
+                      ) : (
+                        <BankOutlined aria-hidden="true" />
+                      )}
                     </span>
                     <span className="premium-login__director-school-value">
                       <small>Établissement</small>
@@ -322,12 +327,20 @@ export default function DirectorLogin() {
                           }}
                         >
                           <span className="premium-login__director-school-monogram">
-                            {school.name
-                              .split(" ")
-                              .filter((word) => word.length > 2)
-                              .slice(0, 2)
-                              .map((word) => word[0])
-                              .join("")}
+                            {school.logo ? (
+                              <img
+                                src={school.logo}
+                                alt=""
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            ) : (
+                              school.name
+                                .split(" ")
+                                .filter((word) => word.length > 2)
+                                .slice(0, 2)
+                                .map((word) => word[0])
+                                .join("")
+                            )}
                           </span>
                           <span>
                             <strong>{school.name}</strong>
@@ -357,18 +370,20 @@ export default function DirectorLogin() {
 
               <div className="premium-login__field premium-login__field--reveal">
                 <label htmlFor="director-email">
-                  E-mail professionnel <span aria-hidden="true">*</span>
+                  Code établissement <span aria-hidden="true">*</span>
                 </label>
                 <div className="premium-login__input-wrap">
                   <MailOutlined aria-hidden="true" />
                   <input
                     id="director-email"
-                    type="email"
+                    type="text"
                     required
                     disabled={isLoading}
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="direction@ecole.cd"
+                    value={schoolCode}
+                    onChange={(event) =>
+                      setSchoolCode(event.target.value.toUpperCase())
+                    }
+                    placeholder="Ex. PG2123D4ABN"
                     autoComplete="username"
                   />
                 </div>

@@ -1,7 +1,8 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { ROUTES } from "./constants";
+import { getLoginRouteForRole, ROUTES } from "./constants";
 import Login from "../features/auth/pages/Login";
 import SuperAdminLogin from "../features/auth/pages/SuperAdminLogin";
+import SuperAdminResetPassword from "../features/auth/pages/SuperAdminResetPassword";
 import DirectorLogin from "../features/auth/pages/DirectorLogin";
 import HomeroomTeacherLogin from "../features/auth/pages/HomeroomTeacherLogin";
 import MainLayout from "../components/layout/MainLayout";
@@ -13,6 +14,7 @@ import SchoolsPage from "../features/schools/pages/SchoolsPage";
 import GradesPage from "../features/grades/pages/GradesPage";
 import StudentsPage from "../features/students/pages/StudentsPage";
 import AcademicDirectoryPage from "../features/management/pages/AcademicDirectoryPage";
+import { useAuth } from "../hooks/useAuth";
 
 // Placeholder pages - will be replaced with actual feature pages
 const ResultsPage = () => <div>Results</div>;
@@ -20,9 +22,13 @@ const BulletinsPage = () => <div>Bulletins</div>;
 const SettingsPage = () => <div>Settings</div>;
 
 const DashboardPage = () => {
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const { user, isLoading } = useAuth();
 
-  switch (user.role) {
+  if (isLoading) {
+    return <div />;
+  }
+
+  switch (user?.role) {
     case "super_admin":
       return <SuperAdminDashboard />;
     case "director":
@@ -39,18 +45,32 @@ const DashboardPage = () => {
 const ProtectedRoute = ({
   children,
   allowedRoles,
+  primarySuperAdminOnly = false,
 }: {
   children: React.ReactNode;
   allowedRoles?: string[];
+  primarySuperAdminOnly?: boolean;
 }) => {
-  const token = localStorage.getItem("auth_token");
-  if (!token) {
-    return <Navigate to={ROUTES.LOGIN} replace />;
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div />;
   }
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  if (!user?.role) {
+    const lastRole = localStorage.getItem("last_role") ?? undefined;
+    return <Navigate to={getLoginRouteForRole(lastRole)} replace />;
+  }
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to={ROUTES.DASHBOARD} replace />;
+  }
+  if (
+    primarySuperAdminOnly &&
+    !(user as { hasFullAccess?: boolean }).hasFullAccess
+  ) {
+    return (
+      <Navigate to={`${ROUTES.DASHBOARD}?workspace=grades`} replace />
+    );
   }
 
   return <MainLayout>{children}</MainLayout>;
@@ -64,6 +84,10 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.SUPER_ADMIN_LOGIN,
     element: <SuperAdminLogin />,
+  },
+  {
+    path: ROUTES.SUPER_ADMIN_RESET_PASSWORD,
+    element: <SuperAdminResetPassword />,
   },
   {
     path: ROUTES.DIRECTOR_LOGIN,
@@ -88,7 +112,10 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.SCHOOLS,
     element: (
-      <ProtectedRoute allowedRoles={["super_admin"]}>
+      <ProtectedRoute
+        allowedRoles={["super_admin"]}
+        primarySuperAdminOnly
+      >
         <SchoolsPage />
       </ProtectedRoute>
     ),

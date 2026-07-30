@@ -7,6 +7,8 @@ export interface User {
   lastName: string;
   role: UserRole;
   schoolId?: string;
+  schoolLogo?: string | null;
+  hasFullAccess?: boolean;
   classId?: string;
   createdAt: string;
   updatedAt: string;
@@ -19,5 +21,4 @@ export interface LoginCredentials {
 
 export interface AuthResponse {
   user: User;
-  token: string;
 }

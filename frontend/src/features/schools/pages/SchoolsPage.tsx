@@ -7,10 +7,13 @@ import {
   DownloadOutlined,
   EditOutlined,
   EnvironmentOutlined,
+  KeyOutlined,
   PlusOutlined,
   SearchOutlined,
+  UploadOutlined,
 } from "@ant-design/icons";
 import {
+  Avatar,
   Button,
   Card,
   Col,
@@ -22,6 +25,7 @@ import {
   Statistic,
   Table,
   Typography,
+  Upload,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -32,14 +36,27 @@ const { Title, Text } = Typography;
 
 const initialSchools: School[] = [];
 
+type CreatedSchoolCredentials = {
+  name: string;
+  code: string;
+  initialPassword: string;
+};
+
 const SchoolsPage = () => {
   const [schools, setSchools] = useState<School[]>(initialSchools);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [logoData, setLogoData] = useState<string | undefined>();
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
+  const [schoolToReset, setSchoolToReset] = useState<School | null>(null);
+  const [temporaryPasswords, setTemporaryPasswords] = useState<
+    Record<string, string>
+  >({});
+  const [createdCredentials, setCreatedCredentials] =
+    useState<CreatedSchoolCredentials | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [form] = Form.useForm<SchoolFormData>();
 
@@ -56,17 +73,30 @@ const SchoolsPage = () => {
   };
 
   useEffect(() => {
-    loadSchools(true);
-    const intervalId = window.setInterval(() => loadSchools(), 1000);
+    let active = true;
 
-    return () => window.clearInterval(intervalId);
+    const refreshSchools = () => {
+      if (active) {
+        void loadSchools();
+      }
+    };
+
+    void loadSchools(true);
+    window.addEventListener("focus", refreshSchools);
+    document.addEventListener("visibilitychange", refreshSchools);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshSchools);
+      document.removeEventListener("visibilitychange", refreshSchools);
+    };
   }, []);
 
   useEffect(() => {
     if (searchParams.get("create") === "1") {
       setEditingSchool(null);
       form.resetFields();
-      form.setFieldValue("country", "RDC");
+      setLogoData(undefined);
       setIsDrawerOpen(true);
     }
   }, [searchParams]);
@@ -75,7 +105,8 @@ const SchoolsPage = () => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return schools;
     return schools.filter((school) =>
-      [school.name, school.code, school.city].some((value) =>
+      [school.name, school.code, school.establishmentCode, school.city].some((value) =>
+        value &&
         value.toLowerCase().includes(normalizedQuery),
       ),
     );
@@ -85,13 +116,14 @@ const SchoolsPage = () => {
     setIsDrawerOpen(false);
     setEditingSchool(null);
     form.resetFields();
+    setLogoData(undefined);
     setSearchParams({});
   };
 
   const openCreateDrawer = () => {
     setEditingSchool(null);
     form.resetFields();
-    form.setFieldValue("country", "RDC");
+    setLogoData(undefined);
     setIsDrawerOpen(true);
   };
 
@@ -99,24 +131,23 @@ const SchoolsPage = () => {
     setEditingSchool(school);
     form.setFieldsValue({
       name: school.name,
-      code: school.code,
+      establishmentCode: school.establishmentCode ?? undefined,
       address: school.address,
-      phone: school.phone,
-      email: school.email,
-      directorId: school.directorId,
       city: school.city,
-      country: school.country,
+      phone: school.phone,
     });
+    setLogoData(school.logo ?? undefined);
     setIsDrawerOpen(true);
   };
 
   const handleSubmitSchool = async (values: SchoolFormData) => {
     const payload = {
       name: values.name,
-      code: values.code,
+      establishmentCode: values.establishmentCode,
       address: values.address,
+      city: values.city,
       phone: values.phone,
-      email: values.email,
+      logo: logoData,
       isActive: true,
     };
 
@@ -126,16 +157,56 @@ const SchoolsPage = () => {
         await api.patch(`/schools/${editingSchool.id}`, payload);
         message.success(`${values.name} a été modifiée avec succès.`);
       } else {
-        await api.post("/schools", payload);
+        const response = await api.post<School & { initialPassword: string }>(
+          "/schools",
+          payload,
+        );
+        setCreatedCredentials({
+          name: response.data.name,
+          code: response.data.code,
+          initialPassword: response.data.initialPassword,
+        });
+        setTemporaryPasswords((current) => ({
+          ...current,
+          [response.data.id]: response.data.initialPassword,
+        }));
         message.success(`${values.name} a été créée avec succès.`);
       }
       await loadSchools();
       closeDrawer();
-    } catch {
-      message.error("Enregistrement impossible. Vérifiez les doublons et les champs.");
+    } catch (error) {
+      const apiMessage = (
+        error as {
+          response?: {
+            data?: { message?: string | string[] };
+          };
+        }
+      ).response?.data?.message;
+      message.error(
+        Array.isArray(apiMessage)
+          ? apiMessage.join(" ")
+          : apiMessage ||
+              "Enregistrement impossible. Vérifiez les champs renseignés.",
+      );
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleLogoSelection = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      message.error("Le logo doit être une image.");
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      message.error("Le logo ne doit pas dépasser 2 Mo.");
+      return Upload.LIST_IGNORE;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setLogoData(String(reader.result));
+    reader.readAsDataURL(file);
+    return false;
   };
 
   const confirmDelete = async () => {
@@ -153,15 +224,42 @@ const SchoolsPage = () => {
     }
   };
 
+  const confirmPasswordReset = async () => {
+    if (!schoolToReset) return;
+    setIsSaving(true);
+    try {
+      const response = await api.post<{ initialPassword: string }>(
+        `/schools/${schoolToReset.id}/reset-password`,
+      );
+      setTemporaryPasswords((current) => ({
+        ...current,
+        [schoolToReset.id]: response.data.initialPassword,
+      }));
+      setCreatedCredentials({
+        name: schoolToReset.name,
+        code: schoolToReset.code,
+        initialPassword: response.data.initialPassword,
+      });
+      setSchoolToReset(null);
+      message.success("Le mot de passe a été réinitialisé.");
+    } catch {
+      message.error("La réinitialisation du mot de passe a échoué.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const columns: ColumnsType<School> = [
     {
       title: "École",
       key: "school",
       render: (_, school) => (
         <div className="schools-page__school-name">
-          <span>
-            <BankOutlined />
-          </span>
+          <Avatar
+            src={school.logo || undefined}
+            icon={!school.logo ? <BankOutlined /> : undefined}
+            shape="square"
+          />
           <div>
             <strong>{school.name}</strong>
             <Text type="secondary">{school.code}</Text>
@@ -170,14 +268,45 @@ const SchoolsPage = () => {
       ),
     },
     { title: "Ville", dataIndex: "city", key: "city", responsive: ["sm"] },
-    { title: "Contact", dataIndex: "email", key: "email", responsive: ["lg"] },
+    {
+      title: "Contact",
+      dataIndex: "phone",
+      key: "phone",
+      responsive: ["md"],
+    },
+    {
+      title: "Identifiants",
+      key: "credentials",
+      responsive: ["lg"],
+      render: (_, school) => (
+        <div>
+          <Text copyable>{school.code}</Text>
+          {temporaryPasswords[school.id] && (
+            <div>
+              <Text type="secondary">Mot de passe : </Text>
+              <Text copyable code>
+                {temporaryPasswords[school.id]}
+              </Text>
+            </div>
+          )}
+        </div>
+      ),
+    },
     {
       title: "Actions",
       key: "actions",
-      width: 108,
+      width: 150,
       align: "right",
       render: (_, school) => (
         <div className="schools-page__actions">
+          <Button
+            type="text"
+            shape="circle"
+            aria-label={`Réinitialiser le mot de passe de ${school.name}`}
+            title="Réinitialiser le mot de passe"
+            icon={<KeyOutlined />}
+            onClick={() => setSchoolToReset(school)}
+          />
           <Button
             type="text"
             shape="circle"
@@ -302,7 +431,6 @@ const SchoolsPage = () => {
             form={form}
             layout="vertical"
             onFinish={handleSubmitSchool}
-            initialValues={{ country: "RDC" }}
             className="schools-page__form"
           >
             <Form.Item
@@ -318,10 +446,9 @@ const SchoolsPage = () => {
               <Col span={12}>
                 <Form.Item
                   label="Code établissement"
-                  name="code"
-                  rules={[{ required: true, message: "Le code est requis." }]}
+                  name="establishmentCode"
                 >
-                  <Input placeholder="Ex. LSM-001" />
+                  <Input placeholder="Facultatif" />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -341,58 +468,92 @@ const SchoolsPage = () => {
             >
               <Input placeholder="Avenue, quartier, commune" />
             </Form.Item>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="Téléphone"
-                  name="phone"
-                  rules={[
-                    { required: true, message: "Le téléphone est requis." },
-                  ]}
-                >
-                  <Input placeholder="+243 ..." />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label="E-mail"
-                  name="email"
-                  rules={[
-                    {
-                      required: true,
-                      type: "email",
-                      message: "Saisissez un e-mail valide.",
-                    },
-                  ]}
-                >
-                  <Input placeholder="contact@ecole.cd" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item
-                  label="Identifiant directeur"
-                  name="directorId"
-                  rules={[
-                    { required: true, message: "Le directeur est requis." },
-                  ]}
-                >
-                  <Input placeholder="Ex. director-1" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label="Pays"
-                  name="country"
-                  rules={[{ required: true, message: "Le pays est requis." }]}
-                >
-                  <Input />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item
+              label="Contact de l’école"
+              name="phone"
+              rules={[
+                {
+                  required: true,
+                  message: "Le numéro de téléphone est requis.",
+                },
+                {
+                  pattern: /^[+]?[\d\s()-]{7,30}$/,
+                  message: "Saisissez un numéro de téléphone valide.",
+                },
+              ]}
+            >
+              <Input placeholder="Ex. +243 000 000 000" />
+            </Form.Item>
+            <Form.Item label="Logo de l’école (facultatif)">
+              <Upload
+                accept="image/*"
+                showUploadList={false}
+                beforeUpload={handleLogoSelection}
+              >
+                <Button icon={<UploadOutlined />}>
+                  {logoData ? "Changer le logo" : "Charger un logo"}
+                </Button>
+              </Upload>
+              {logoData && (
+                <div style={{ marginTop: 12 }}>
+                  <Avatar src={logoData} shape="square" size={72} />
+                  <Button
+                    type="link"
+                    danger
+                    onClick={() => setLogoData(undefined)}
+                  >
+                    Retirer
+                  </Button>
+                </div>
+              )}
+            </Form.Item>
           </Form>
         </Drawer>
+
+        <Modal
+          open={Boolean(createdCredentials)}
+          title="Identifiants de l’école"
+          okText="J’ai enregistré les identifiants"
+          cancelButtonProps={{ style: { display: "none" } }}
+          closable={false}
+          maskClosable={false}
+          onOk={() => setCreatedCredentials(null)}
+        >
+          <Text>
+            Conservez ces informations : le mot de passe ne sera plus affiché
+            après la fermeture.
+          </Text>
+          <div style={{ marginTop: 20 }}>
+            <Text type="secondary">École</Text>
+            <Title level={5} copyable>
+              {createdCredentials?.name}
+            </Title>
+            <Text type="secondary">Code établissement</Text>
+            <Title level={4} copyable>
+              {createdCredentials?.code}
+            </Title>
+            <Text type="secondary">Mot de passe initial</Text>
+            <Title level={4} copyable>
+              {createdCredentials?.initialPassword}
+            </Title>
+          </div>
+        </Modal>
+
+        <Modal
+          open={Boolean(schoolToReset)}
+          title="Réinitialiser le mot de passe ?"
+          okText="Réinitialiser"
+          cancelText="Annuler"
+          confirmLoading={isSaving}
+          onCancel={() => setSchoolToReset(null)}
+          onOk={confirmPasswordReset}
+        >
+          <Text>
+            L’ancien mot de passe de <strong>{schoolToReset?.name}</strong> ne
+            fonctionnera plus. Le nouveau mot de passe sera affiché
+            temporairement.
+          </Text>
+        </Modal>
 
         <Modal
           open={Boolean(schoolToDelete)}
