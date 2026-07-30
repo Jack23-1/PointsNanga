@@ -7,6 +7,7 @@ import {
   AssignStudentDto,
   CreateClassDto,
   CreateCourseDto,
+  CreateCourseAssignmentDto,
   CreateOptionDto,
   CreateSchoolYearDto,
   CreateStudentDto,
@@ -105,13 +106,21 @@ export class AcademicController {
   }
 
   @Get("teachers")
-  listTeachers(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listTeachers(schoolId);
+  listTeachers(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    return this.academicService.listTeachers(request.user?.role === "director" ? String(request.user.schoolId) : schoolId);
   }
 
   @Post("teachers")
-  createTeacher(@Body() dto: CreateTeacherDto) {
-    return this.academicService.createTeacher(dto);
+  createTeacher(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateTeacherDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createTeacher(dto, String(schoolId));
   }
 
   @Patch("teachers/:id")
@@ -125,13 +134,21 @@ export class AcademicController {
   }
 
   @Get("courses")
-  listCourses(@Query("schoolId") schoolId?: string) {
-    return this.academicService.listCourses(schoolId);
+  listCourses(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    return this.academicService.listCourses(request.user?.role === "director" ? String(request.user.schoolId) : schoolId);
   }
 
   @Post("courses")
-  createCourse(@Body() dto: CreateCourseDto) {
-    return this.academicService.createCourse(dto);
+  createCourse(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateCourseDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createCourse(dto, String(schoolId));
   }
 
   @Patch("courses/:id")
@@ -142,6 +159,23 @@ export class AcademicController {
   @Delete("courses/:id")
   deleteCourse(@Param("id") id: string) {
     return this.academicService.deleteCourse(id);
+  }
+
+  @Get("course-assignments")
+  listCourseAssignments(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listCourseAssignments(String(request.user.schoolId));
+  }
+
+  @Post("course-assignments")
+  createCourseAssignment(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: CreateCourseAssignmentDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createCourseAssignment(dto, String(request.user.schoolId));
   }
 
   @Get("students")

@@ -301,6 +301,7 @@ model professeurs {
   prenom                   String                     @db.VarChar(100)
   sexe                     String?                    @db.VarChar(20)
   telephone                String?                    @db.VarChar(30)
+  photo                    String?
   email                    String?                    @db.VarChar(150)
   adresse                  String?                    @db.VarChar(255)
   specialite               String?                    @db.VarChar(150)

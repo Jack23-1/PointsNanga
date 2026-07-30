@@ -87,34 +87,23 @@ export class CreateClassDto {
 export class UpdateClassDto extends CreateClassDto {}
 
 export class CreateTeacherDto {
+  @IsOptional()
   @IsInt()
   @Min(1)
-  schoolId: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  matricule?: string;
+  schoolId?: number;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   lastName: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  postName?: string;
-
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   firstName: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  gender?: string;
+  @IsIn(["Fille", "Garçon", "F", "M"])
+  gender: string;
 
   @IsOptional()
   @IsString()
@@ -122,41 +111,24 @@ export class CreateTeacherDto {
   phone?: string;
 
   @IsOptional()
-  @IsEmail()
-  @MaxLength(150)
-  email?: string;
-
-  @IsOptional()
   @IsString()
-  @MaxLength(255)
-  address?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(150)
-  specialty?: string;
+  @MaxLength(3000000)
+  photo?: string;
 }
 
 export class UpdateTeacherDto extends CreateTeacherDto {}
 
 export class CreateCourseDto {
+  @IsOptional()
   @IsInt()
   @Min(1)
-  schoolId: number;
+  schoolId?: number;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
   label: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  code?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
 }
 
 export class UpdateCourseDto extends CreateCourseDto {}
@@ -226,6 +198,24 @@ export class DeleteStudentDto {
   @IsString()
   @IsNotEmpty()
   password: string;
+}
+
+export class CreateCourseAssignmentDto {
+  @IsInt()
+  @Min(1)
+  classId: number;
+
+  @IsInt()
+  @Min(1)
+  courseId: number;
+
+  @IsInt()
+  @Min(1)
+  teacherId: number;
+
+  @IsNumber()
+  @Min(0.01)
+  weight: number;
 }
 
 export class CreateSchoolYearDto {

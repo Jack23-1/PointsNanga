@@ -8,6 +8,7 @@ import { generateStudentMatricule } from "../students/student-matricule";
 import {
   AssignStudentDto,
   CreateClassDto,
+  CreateCourseAssignmentDto,
   CreateCourseDto,
   CreateOptionDto,
   CreateSchoolDto,
@@ -436,7 +437,10 @@ export class AcademicService {
 
   async listTeachers(schoolId?: string) {
     const teachers = await this.prisma.professeurs.findMany({
-      where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
+      where: {
+        statut: "ACTIF",
+        ...(schoolId ? { id_ecole: toBigInt(schoolId) } : {}),
+      },
       orderBy: [{ nom: "asc" }, { prenom: "asc" }],
     });
     return teachers.map((teacher) => ({
@@ -448,6 +452,7 @@ export class AcademicService {
       firstName: teacher.prenom,
       gender: teacher.sexe,
       phone: teacher.telephone,
+      photo: teacher.photo,
       email: teacher.email,
       address: teacher.adresse,
       specialty: teacher.specialite,
@@ -455,22 +460,19 @@ export class AcademicService {
     }));
   }
 
-  async createTeacher(dto: CreateTeacherDto) {
+  async createTeacher(dto: CreateTeacherDto, schoolId: string) {
     try {
-      return await this.prisma.professeurs.create({
+      const teacher = await this.prisma.professeurs.create({
         data: {
-          id_ecole: toBigInt(dto.schoolId),
-          matricule: clean(dto.matricule),
-          nom: dto.lastName.trim(),
-          postnom: clean(dto.postName),
-          prenom: dto.firstName.trim(),
+          id_ecole: toBigInt(schoolId),
+          nom: uppercaseName(dto.lastName),
+          prenom: capitalizeFirstName(dto.firstName),
           sexe: clean(dto.gender),
           telephone: clean(dto.phone),
-          email: clean(dto.email)?.toLowerCase(),
-          adresse: clean(dto.address),
-          specialite: clean(dto.specialty),
+          photo: clean(dto.photo),
         },
       });
+      return { id: teacher.id_professeur.toString() };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -481,16 +483,12 @@ export class AcademicService {
       return await this.prisma.professeurs.update({
         where: { id_professeur: toBigInt(id) },
         data: {
-          id_ecole: toBigInt(dto.schoolId),
-          matricule: clean(dto.matricule),
-          nom: dto.lastName.trim(),
-          postnom: clean(dto.postName),
-          prenom: dto.firstName.trim(),
+          id_ecole: dto.schoolId ? toBigInt(dto.schoolId) : undefined,
+          nom: uppercaseName(dto.lastName),
+          prenom: capitalizeFirstName(dto.firstName),
           sexe: clean(dto.gender),
           telephone: clean(dto.phone),
-          email: clean(dto.email)?.toLowerCase(),
-          adresse: clean(dto.address),
-          specialite: clean(dto.specialty),
+          photo: clean(dto.photo),
         },
       });
     } catch (error) {
@@ -511,7 +509,10 @@ export class AcademicService {
 
   async listCourses(schoolId?: string) {
     const courses = await this.prisma.cours.findMany({
-      where: schoolId ? { id_ecole: toBigInt(schoolId) } : undefined,
+      where: {
+        statut: "ACTIF",
+        ...(schoolId ? { id_ecole: toBigInt(schoolId) } : {}),
+      },
       orderBy: { libelle: "asc" },
     });
     return courses.map((course) => ({
@@ -524,16 +525,29 @@ export class AcademicService {
     }));
   }
 
-  async createCourse(dto: CreateCourseDto) {
+  async createCourse(dto: CreateCourseDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const baseCode = classCodeBase(dto.label);
+    let code = baseCode;
+    let suffix = 1;
+    while (
+      await this.prisma.cours.findUnique({
+        where: { id_ecole_code_cours: { id_ecole, code_cours: code } },
+        select: { id_cours: true },
+      })
+    ) {
+      suffix += 1;
+      code = `${baseCode.slice(0, 25)}-${suffix}`;
+    }
     try {
-      return await this.prisma.cours.create({
+      const course = await this.prisma.cours.create({
         data: {
-          id_ecole: toBigInt(dto.schoolId),
+          id_ecole,
           libelle: dto.label.trim(),
-          code_cours: clean(dto.code)?.toUpperCase(),
-          description: clean(dto.description),
+          code_cours: code,
         },
       });
+      return { id: course.id_cours.toString() };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -544,10 +558,8 @@ export class AcademicService {
       return await this.prisma.cours.update({
         where: { id_cours: toBigInt(id) },
         data: {
-          id_ecole: toBigInt(dto.schoolId),
+          id_ecole: dto.schoolId ? toBigInt(dto.schoolId) : undefined,
           libelle: dto.label.trim(),
-          code_cours: clean(dto.code)?.toUpperCase(),
-          description: clean(dto.description),
         },
       });
     } catch (error) {
@@ -559,6 +571,99 @@ export class AcademicService {
     try {
       await this.prisma.cours.delete({ where: { id_cours: toBigInt(id) } });
       return { deleted: true };
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  async listCourseAssignments(schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const assignments = await this.prisma.affectations_professeurs.findMany({
+      where: {
+        statut: "ACTIF",
+        cours_classes: { classes: { id_ecole } },
+      },
+      include: {
+        professeurs: true,
+        cours_classes: { include: { cours: true, classes: true } },
+      },
+      orderBy: { date_creation: "desc" },
+    });
+    return assignments.map((assignment) => ({
+      id: assignment.id_affectation_professeur.toString(),
+      teacher: `${assignment.professeurs.nom} ${assignment.professeurs.prenom}`,
+      course: assignment.cours_classes.cours.libelle,
+      className: assignment.cours_classes.classes.libelle,
+      weight: Number(assignment.cours_classes.ponderation),
+      isActive: assignment.statut === "ACTIF",
+    }));
+  }
+
+  async createCourseAssignment(
+    dto: CreateCourseAssignmentDto,
+    schoolId: string,
+  ) {
+    const id_ecole = toBigInt(schoolId);
+    const id_classe = toBigInt(dto.classId);
+    const id_cours = toBigInt(dto.courseId);
+    const id_professeur = toBigInt(dto.teacherId);
+    const [schoolClass, course, teacher] = await Promise.all([
+      this.prisma.classes.findFirst({ where: { id_classe, id_ecole, statut: "ACTIF" } }),
+      this.prisma.cours.findFirst({ where: { id_cours, id_ecole, statut: "ACTIF" } }),
+      this.prisma.professeurs.findFirst({ where: { id_professeur, id_ecole, statut: "ACTIF" } }),
+    ]);
+    if (!schoolClass || !course || !teacher) {
+      throw new BadRequestException(
+        "La classe, le cours ou le professeur n'appartient pas à votre établissement.",
+      );
+    }
+    let schoolYear = await this.prisma.annees_scolaires.findFirst({
+      where: { id_ecole, est_active: true },
+      orderBy: { date_debut: "desc" },
+    });
+    if (!schoolYear) {
+      throw new BadRequestException(
+        "Ajoutez d'abord un élève afin d'initialiser l'année scolaire.",
+      );
+    }
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        const courseClass = await prisma.cours_classes.upsert({
+          where: {
+            id_cours_id_classe_id_annee_scolaire: {
+              id_cours,
+              id_classe,
+              id_annee_scolaire: schoolYear!.id_annee_scolaire,
+            },
+          },
+          update: {
+            ponderation: dto.weight,
+            statut: "ACTIF",
+            date_mise_a_jour: new Date(),
+          },
+          create: {
+            id_cours,
+            id_classe,
+            id_annee_scolaire: schoolYear!.id_annee_scolaire,
+            ponderation: dto.weight,
+          },
+        });
+        const assignment = await prisma.affectations_professeurs.upsert({
+          where: {
+            id_cours_classe_id_annee_scolaire: {
+              id_cours_classe: courseClass.id_cours_classe,
+              id_annee_scolaire: schoolYear!.id_annee_scolaire,
+            },
+          },
+          update: { id_professeur, statut: "ACTIF" },
+          create: {
+            id_professeur,
+            id_cours_classe: courseClass.id_cours_classe,
+            id_annee_scolaire: schoolYear!.id_annee_scolaire,
+          },
+        });
+        return { id: assignment.id_affectation_professeur.toString() };
+      });
     } catch (error) {
       handlePrismaError(error);
     }

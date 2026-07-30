@@ -1,363 +1,598 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOutlined,
-  ClockCircleOutlined,
-  IdcardOutlined,
-  MailOutlined,
   PhoneOutlined,
   PlusOutlined,
   ReadOutlined,
-  SafetyCertificateOutlined,
   SearchOutlined,
   TeamOutlined,
+  UploadOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, Modal, Row, Select, Table, Tag, message } from "antd";
+import {
+  Avatar,
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Select,
+  Table,
+  Upload,
+  message,
+} from "antd";
+import axios from "axios";
 import { api } from "../../../lib/api";
 
-type DirectoryKind = "classes" | "teachers" | "courses" | "homeroom" | "assignments";
+type DirectoryKind =
+  | "classes"
+  | "teachers"
+  | "courses"
+  | "homeroom"
+  | "assignments";
 
 interface DirectoryRow {
   key: string;
   primary: string;
   secondary: string;
-  code: string;
-  category: string;
-  count: string;
-  status: "Actif" | "Complet" | "Disponible";
-  capacity?: number;
+  detail: string;
+  extra: string;
+  status: string;
   students?: number;
 }
 
-interface DirectoryFormValues {
-  name: string;
+interface FormValues {
+  name?: string;
   firstName?: string;
-  email?: string;
+  gender?: string;
   phone?: string;
-  code: string;
-  category: string;
-  count: string;
-  secondary: string;
-  capacity?: number;
+  classId?: string;
+  courseId?: string;
+  teacherId?: string;
+  weight?: number;
 }
 
-interface ClassApiRow {
+interface Choice {
   id: string;
   label: string;
-  code: string;
-  capacity: number | null;
-  students: number;
-  option?: string | null;
-  isActive: boolean;
 }
 
-const directoryContent = {
+const contentByKind = {
   classes: {
-    eyebrow: "Gestion scolaire",
     title: "Classes",
-    description: "Organisation des classes, effectifs et titulaires de l’établissement.",
+    description: "Organisation des classes et répartition des élèves.",
     icon: <TeamOutlined />,
     addLabel: "Ajouter une classe",
-    search: "Rechercher une classe ou un titulaire...",
-    categoryLabel: "Niveau",
-    countLabel: "Effectif",
-    options: ["Toutes les classes"],
-    stats: [["0", "Classes actives"], ["0", "Élèves répartis"], ["0", "Élèves par classe"], ["0%", "Capacité utilisée"]],
-    rows: [],
+    search: "Rechercher une classe...",
   },
   teachers: {
-    eyebrow: "Gestion scolaire",
     title: "Professeurs",
-    description: "Dossiers, affectations et disponibilité du personnel enseignant.",
+    description: "Gérez le personnel enseignant de votre établissement.",
     icon: <UserOutlined />,
     addLabel: "Ajouter un professeur",
-    search: "Rechercher un professeur ou une matière...",
-    categoryLabel: "Matière",
-    countLabel: "Charge horaire",
-    options: ["Toutes les matières"],
-    stats: [["0", "Professeurs actifs"], ["0", "Départements"], ["0h", "Charge moyenne"], ["0%", "Présence"]],
-    rows: [],
+    search: "Rechercher un professeur...",
   },
   courses: {
-    eyebrow: "Gestion scolaire",
     title: "Cours",
-    description: "Matières enseignées, volumes horaires et niveaux concernés.",
+    description: "Gérez les matières enseignées dans l’établissement.",
     icon: <ReadOutlined />,
     addLabel: "Ajouter un cours",
-    search: "Rechercher un cours ou un code...",
-    categoryLabel: "Département",
-    countLabel: "Volume horaire",
-    options: ["Tous les départements", "Sciences", "Langues", "Sciences humaines"],
-    stats: [["0", "Cours programmés"], ["0", "Départements"], ["0h", "Volume annuel"], ["0%", "Cours affectés"]],
-    rows: [],
+    search: "Rechercher un cours...",
   },
   homeroom: {
-    eyebrow: "Gestion scolaire",
     title: "Titulaires",
-    description: "Affectation des professeurs titulaires et suivi des classes encadrées.",
+    description: "Affectation des professeurs titulaires aux classes.",
     icon: <TeamOutlined />,
     addLabel: "Affecter un titulaire",
-    search: "Rechercher un titulaire ou une classe...",
-    categoryLabel: "Classe",
-    countLabel: "Effectif encadré",
-    options: ["Toutes les classes"],
-    stats: [["0", "Classes encadrées"], ["0", "Titulaires affectés"], ["0", "Élèves suivis"], ["0%", "Couverture"]],
-    rows: [],
+    search: "Rechercher un titulaire...",
   },
   assignments: {
-    eyebrow: "Gestion scolaire",
     title: "Attributions des cours",
-    description: "Répartition officielle des cours entre professeurs, classes et volumes horaires.",
-    icon: <ReadOutlined />,
+    description:
+      "Associez chaque cours à une classe, un professeur et une pondération.",
+    icon: <BookOutlined />,
     addLabel: "Nouvelle attribution",
-    search: "Rechercher un cours, un professeur ou une classe...",
-    categoryLabel: "Classe",
-    countLabel: "Volume attribué",
-    options: ["Toutes les classes"],
-    stats: [["0", "Attributions actives"], ["0", "Professeurs affectés"], ["0", "Cours couverts"], ["0%", "Couverture"]],
-    rows: [],
+    search: "Rechercher un cours, une classe ou un professeur...",
   },
 } as const;
 
-const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
-  const content = directoryContent[kind];
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState(content.options[0] as string);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [form] = Form.useForm<DirectoryFormValues>();
-  const [rows, setRows] = useState<DirectoryRow[]>([]);
+const errorMessage = (error: unknown, fallback: string) => {
+  if (!axios.isAxiosError(error)) return fallback;
+  const value = error.response?.data?.message;
+  return Array.isArray(value)
+    ? value.join(" ")
+    : typeof value === "string"
+      ? value
+      : fallback;
+};
 
-  const loadClasses = async (showLoading = false) => {
-    if (kind !== "classes") return;
+const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
+  const content = contentByKind[kind];
+  const [form] = Form.useForm<FormValues>();
+  const [rows, setRows] = useState<DirectoryRow[]>([]);
+  const [classes, setClasses] = useState<Choice[]>([]);
+  const [courses, setCourses] = useState<Choice[]>([]);
+  const [teachers, setTeachers] = useState<Choice[]>([]);
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const loadData = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
     try {
-      const classesResponse = await api.get<ClassApiRow[]>("/classes");
-      setRows(
-        classesResponse.data.map((schoolClass) => ({
-          key: schoolClass.id,
-          primary: schoolClass.label,
-          secondary: schoolClass.option || "Sans option",
-          code: schoolClass.code,
-          category: "",
-          count: String(schoolClass.students),
-          capacity: schoolClass.capacity ?? undefined,
-          students: schoolClass.students,
-          status: schoolClass.isActive ? "Actif" : "Disponible",
-        })),
-      );
-    } catch {
-      message.error("Impossible de charger les classes de l’établissement.");
+      if (kind === "classes") {
+        const response = await api.get<any[]>("/classes");
+        setRows(
+          response.data.map((item) => ({
+            key: item.id,
+            primary: item.label,
+            secondary: item.code,
+            detail: `${item.students} élève${item.students !== 1 ? "s" : ""}`,
+            extra: "",
+            status: "Actif",
+            students: item.students,
+          })),
+        );
+      } else if (kind === "teachers") {
+        const response = await api.get<any[]>("/teachers");
+        setRows(
+          response.data.map((item) => ({
+            key: item.id,
+            primary: `${item.lastName} ${item.firstName}`,
+            secondary: item.gender || "—",
+            detail: item.phone || "Aucun contact",
+            extra: item.photo || "",
+            status: "Actif",
+          })),
+        );
+      } else if (kind === "courses") {
+        const response = await api.get<any[]>("/courses");
+        setRows(
+          response.data.map((item) => ({
+            key: item.id,
+            primary: item.label,
+            secondary: item.code || "Code automatique",
+            detail: "Cours actif",
+            extra: "",
+            status: "Actif",
+          })),
+        );
+      } else if (kind === "assignments") {
+        const [assignments, classList, courseList, teacherList] =
+          await Promise.all([
+            api.get<any[]>("/course-assignments"),
+            api.get<any[]>("/classes"),
+            api.get<any[]>("/courses"),
+            api.get<any[]>("/teachers"),
+          ]);
+        setRows(
+          assignments.data.map((item) => ({
+            key: item.id,
+            primary: item.course,
+            secondary: item.className,
+            detail: item.teacher,
+            extra: String(item.weight),
+            status: "Actif",
+          })),
+        );
+        setClasses(
+          classList.data.map((item) => ({ id: item.id, label: item.label })),
+        );
+        setCourses(
+          courseList.data.map((item) => ({ id: item.id, label: item.label })),
+        );
+        setTeachers(
+          teacherList.data.map((item) => ({
+            id: item.id,
+            label: `${item.lastName} ${item.firstName}`,
+          })),
+        );
+      } else {
+        setRows([]);
+      }
+    } catch (error) {
+      message.error(errorMessage(error, "Chargement impossible."));
     } finally {
       if (showLoading) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadClasses(true);
+    setRows([]);
+    setSearch("");
+    void loadData(true);
   }, [kind]);
-
-  const categoryOptions = [...content.options];
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    return rows.filter((row) => {
-      const matchesSearch = !query || `${row.primary} ${row.secondary} ${row.code}`.toLocaleLowerCase("fr").includes(query);
-      const matchesCategory =
-        kind === "classes" ||
-        category === categoryOptions[0] ||
-        row.category === category;
-      return matchesSearch && matchesCategory;
-    });
-  }, [category, categoryOptions, rows, search]);
+    if (!query) return rows;
+    return rows.filter((row) =>
+      `${row.primary} ${row.secondary} ${row.detail}`
+        .toLocaleLowerCase("fr")
+        .includes(query),
+    );
+  }, [rows, search]);
 
-  const columns = [
-    {
-      title: kind === "teachers" || kind === "homeroom" ? "Professeur" : kind === "classes" ? "Classe" : "Cours",
-      key: "identity",
-      render: (_: unknown, row: DirectoryRow) => (
-        <div className="academic-directory__identity">
-          <span>{kind === "courses" ? <BookOutlined /> : content.icon}</span>
-          <div><strong>{row.primary}</strong><small>{row.secondary}</small></div>
-        </div>
-      ),
-    },
-    { title: "Référence", dataIndex: "code", key: "code", render: (value: string) => <code>{value}</code> },
-    { title: content.categoryLabel, dataIndex: "category", key: "category", render: (value: string) => <Tag>{value}</Tag> },
-    { title: content.countLabel, dataIndex: "count", key: "count" },
-    { title: "Statut", dataIndex: "status", key: "status", render: (value: string) => <span className="academic-directory__status"><i />{value}</span> },
-  ];
-  const visibleColumns =
-    kind === "classes"
-      ? columns.filter((column) => column.key !== "category")
-      : columns;
-
-  const createEntry = async () => {
+  const save = async () => {
     const values = await form.validateFields();
-    if (kind !== "classes") {
-      message.info("Ce module sera relié aux données de l’établissement.");
-      return;
-    }
-
     setIsSaving(true);
     try {
-      await api.post("/classes", {
-        label: values.name,
-      });
-      await loadClasses();
+      if (kind === "classes") {
+        await api.post("/classes", { label: values.name });
+      } else if (kind === "teachers") {
+        await api.post("/teachers", {
+          lastName: values.name,
+          firstName: values.firstName,
+          gender: values.gender,
+          phone: values.phone,
+          photo,
+        });
+      } else if (kind === "courses") {
+        await api.post("/courses", { label: values.name });
+      } else if (kind === "assignments") {
+        await api.post("/course-assignments", {
+          classId: Number(values.classId),
+          courseId: Number(values.courseId),
+          teacherId: Number(values.teacherId),
+          weight: values.weight,
+        });
+      } else {
+        message.info("Le module Titulaires sera configuré séparément.");
+        return;
+      }
+      await loadData();
       form.resetFields();
+      setPhoto(null);
       setIsModalOpen(false);
-      message.success("Classe ajoutée avec succès.");
-    } catch {
-      message.error(
-        "Ajout impossible. Vérifiez le nom de la classe.",
-      );
+      message.success("Enregistrement effectué avec succès.");
+    } catch (error) {
+      message.error(errorMessage(error, "Enregistrement impossible."));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const classStats = useMemo(() => {
-    const activeClasses = rows.filter((row) => row.status === "Actif");
-    const students = rows.reduce((total, row) => total + (row.students ?? 0), 0);
-    const occupiedClasses = rows.filter((row) => (row.students ?? 0) > 0).length;
-    return [
-      [String(activeClasses.length), "Classes actives"],
-      [String(students), "Élèves répartis"],
-      [
-        activeClasses.length
-          ? String(Math.round(students / activeClasses.length))
-          : "0",
-        "Élèves par classe",
-      ],
-      [
-        String(occupiedClasses),
-        "Classes avec élèves",
-      ],
-    ];
-  }, [rows]);
+  const columns = [
+    {
+      title:
+        kind === "teachers"
+          ? "Professeur"
+          : kind === "classes"
+            ? "Classe"
+            : "Cours",
+      key: "primary",
+      render: (_: unknown, row: DirectoryRow) => (
+        <div className="academic-directory__identity">
+          {kind === "teachers" ? (
+            <Avatar src={row.extra || undefined} icon={<UserOutlined />} />
+          ) : (
+            <span>{content.icon}</span>
+          )}
+          <div>
+            <strong>{row.primary}</strong>
+            <small>{row.secondary}</small>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title:
+        kind === "assignments"
+          ? "Professeur"
+          : kind === "teachers"
+            ? "Contact"
+            : "Informations",
+      dataIndex: "detail",
+      key: "detail",
+    },
+    ...(kind === "assignments"
+      ? [
+          {
+            title: "Pondération",
+            dataIndex: "extra",
+            key: "weight",
+            render: (value: string) => <strong>{value}</strong>,
+          },
+        ]
+      : []),
+  ];
 
-  const displayedStats = kind === "classes" ? classStats : content.stats;
+  const statLabels =
+    kind === "teachers"
+      ? ["Professeurs actifs", "Avec contact", "Hommes", "Femmes"]
+      : kind === "courses"
+        ? ["Cours actifs", "Cours attribués", "Non attribués", "Total"]
+        : kind === "assignments"
+          ? ["Attributions", "Cours couverts", "Professeurs", "Classes"]
+          : ["Classes actives", "Élèves répartis", "Classes occupées", "Total"];
+  const statValues =
+    kind === "teachers"
+      ? [
+          rows.length,
+          rows.filter((row) => row.detail !== "Aucun contact").length,
+          rows.filter((row) => ["M", "Garçon"].includes(row.secondary)).length,
+          rows.filter((row) => ["F", "Fille"].includes(row.secondary)).length,
+        ]
+      : kind === "assignments"
+        ? [
+            rows.length,
+            new Set(rows.map((row) => row.primary)).size,
+            new Set(rows.map((row) => row.detail)).size,
+            new Set(rows.map((row) => row.secondary)).size,
+          ]
+        : kind === "classes"
+          ? [
+              rows.length,
+              rows.reduce((sum, row) => sum + (row.students || 0), 0),
+              rows.filter((row) => (row.students || 0) > 0).length,
+              rows.length,
+            ]
+          : [rows.length, 0, rows.length, rows.length];
 
   return (
     <section className={`academic-directory academic-directory--${kind}`}>
       <header className="academic-directory__hero">
         <div className="academic-directory__seal">{content.icon}</div>
         <div>
-          <span>{content.eyebrow}</span>
+          <span>Gestion scolaire</span>
           <h1>{content.title}</h1>
           <p>{content.description}</p>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>{content.addLabel}</Button>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setIsModalOpen(true)}
+        >
+          {content.addLabel}
+        </Button>
       </header>
 
       <div className="academic-directory__stats">
-        {displayedStats.map(([value, label]) => <Card key={label}><strong>{value}</strong><span>{label}</span></Card>)}
+        {statLabels.map((label, index) => (
+          <Card key={label}>
+            <strong>{statValues[index]}</strong>
+            <span>{label}</span>
+          </Card>
+        ))}
       </div>
 
       <Card className="academic-directory__registry">
         <div className="academic-directory__registry-title">
-          <div><span>Répertoire</span><h2>Liste administrative</h2></div>
+          <div>
+            <span>Répertoire</span>
+            <h2>Liste administrative</h2>
+          </div>
           <small>{filteredRows.length} entrées enregistrées</small>
         </div>
         <div className="academic-directory__toolbar">
-          <Input prefix={<SearchOutlined />} placeholder={content.search} value={search} onChange={(event) => setSearch(event.target.value)} allowClear />
-          {kind !== "classes" && (
-            <Select value={category} onChange={setCategory} options={categoryOptions.map((value) => ({ value, label: value }))} />
-          )}
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder={content.search}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            allowClear
+          />
         </div>
-        <Table<DirectoryRow> columns={visibleColumns} dataSource={filteredRows} loading={isLoading} pagination={false} scroll={{ x: 760 }} />
+        <Table
+          rowKey="key"
+          columns={columns}
+          dataSource={filteredRows}
+          loading={isLoading}
+          pagination={false}
+          scroll={{ x: 680 }}
+        />
       </Card>
 
       <Modal
-        width={680}
-        title={<div className="academic-directory__modal-title"><span>{content.icon}</span><div><strong>{content.addLabel}</strong>{kind !== "classes" && <small>Registre administratif officiel</small>}</div></div>}
+        width={kind === "assignments" ? 620 : 520}
+        title={
+          <div className="academic-directory__modal-title">
+            <span>{content.icon}</span>
+            <div>
+              <strong>{content.addLabel}</strong>
+            </div>
+          </div>
+        }
         open={isModalOpen}
-        onCancel={() => { setIsModalOpen(false); form.resetFields(); }}
-        onOk={createEntry}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setPhoto(null);
+          form.resetFields();
+        }}
+        onOk={save}
         confirmLoading={isSaving}
         okText="Enregistrer"
         cancelText="Annuler"
         className="academic-directory__modal"
       >
-        {kind === "classes" ? (
-          <Form form={form} layout="vertical" className="academic-directory__form academic-directory__form--simple">
+        <Form
+          form={form}
+          layout="vertical"
+          className="academic-directory__form academic-directory__form--simple"
+        >
+          {kind === "classes" && (
             <Form.Item
               name="name"
               label="Nom de la classe"
-              rules={[
-                { required: true, message: "Saisissez le nom de la classe." },
-              ]}
+              rules={[{ required: true, message: "Champ requis." }]}
+            >
+              <Input autoFocus prefix={<TeamOutlined />} placeholder="6ème A" />
+            </Form.Item>
+          )}
+
+          {kind === "teachers" && (
+            <>
+              <div className="students-directory__photo-field">
+                <Avatar
+                  size={68}
+                  src={photo || undefined}
+                  icon={<UserOutlined />}
+                />
+                <div>
+                  <strong>Photo facultative</strong>
+                  <Upload
+                    accept="image/jpeg,image/png,image/webp"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      if (file.size > 2 * 1024 * 1024) {
+                        message.error("La photo ne doit pas dépasser 2 Mo.");
+                        return Upload.LIST_IGNORE;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => setPhoto(String(reader.result));
+                      reader.readAsDataURL(file);
+                      return false;
+                    }}
+                  >
+                    <Button size="small" icon={<UploadOutlined />}>
+                      Choisir une photo
+                    </Button>
+                  </Upload>
+                </div>
+              </div>
+              <Row gutter={14}>
+                <Col span={12}>
+                  <Form.Item
+                    name="name"
+                    label="Nom"
+                    normalize={(value: string) =>
+                      value.toLocaleUpperCase("fr")
+                    }
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Input prefix={<UserOutlined />} placeholder="NOM" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="firstName"
+                    label="Prénom"
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Input prefix={<UserOutlined />} placeholder="Prénom" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={14}>
+                <Col span={12}>
+                  <Form.Item
+                    name="gender"
+                    label="Sexe"
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Select
+                      options={[
+                        { value: "M", label: "Homme" },
+                        { value: "F", label: "Femme" },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="phone" label="Contact (facultatif)">
+                    <Input
+                      prefix={<PhoneOutlined />}
+                      placeholder="+243..."
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </>
+          )}
+
+          {kind === "courses" && (
+            <Form.Item
+              name="name"
+              label="Intitulé du cours"
+              rules={[{ required: true, message: "Champ requis." }]}
             >
               <Input
                 autoFocus
-                prefix={<TeamOutlined />}
-                placeholder="Ex. 6ème A"
+                prefix={<BookOutlined />}
+                placeholder="Mathématiques"
               />
             </Form.Item>
-          </Form>
-        ) : ["teachers", "courses"].includes(kind) ? (
-          <Form form={form} layout="vertical" className="academic-directory__form">
-            <div className="academic-directory__form-banner">
-              <SafetyCertificateOutlined />
-              <div><strong>Nouveau dossier officiel</strong><span>Les informations seront ajoutées au registre de l’établissement.</span></div>
-              <b>2025—2026</b>
-            </div>
-            <div className="academic-directory__form-section"><span>01</span><div><strong>Identification</strong><small>Informations principales du dossier</small></div></div>
-            {kind === "teachers" ? (
+          )}
+
+          {kind === "assignments" && (
+            <>
               <Row gutter={14}>
-                <Col span={12}><Form.Item name="name" label="Nom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Nom" /></Form.Item></Col>
-                <Col span={12}><Form.Item name="firstName" label="Prénom" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<UserOutlined />} placeholder="Prénom" /></Form.Item></Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="classId"
+                    label="Classe"
+                    rules={[{ required: true, message: "Choisissez la classe." }]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      options={classes.map((item) => ({
+                        value: item.id,
+                        label: item.label,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="courseId"
+                    label="Cours"
+                    rules={[{ required: true, message: "Choisissez le cours." }]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      options={courses.map((item) => ({
+                        value: item.id,
+                        label: item.label,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
               </Row>
-            ) : (
-              <Form.Item
-                name="name"
-                label="Intitulé du cours"
-                rules={[{ required: true, message: "Champ requis." }]}
-              >
-                <Input prefix={<BookOutlined />} placeholder="Ex. Géographie" />
-              </Form.Item>
-            )}
-            <Row gutter={14}>
-              <Col span={12}><Form.Item name="code" label="Code officiel" rules={[{ required: true, message: "Champ requis." }]}><Input prefix={<IdcardOutlined />} placeholder="Référence unique" /></Form.Item></Col>
-              <Col span={12}>
-                <Form.Item
-                  name="category"
-                  label={content.categoryLabel}
-                  rules={[{ required: true, message: "Champ requis." }]}
-                >
-                  <Select
-                    placeholder="Sélectionner"
-                    options={content.options
-                      .slice(1)
-                      .map((value) => ({ value, label: value }))}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-            <div className="academic-directory__form-section"><span>02</span><div><strong>Affectation et charge</strong><small>Organisation académique</small></div></div>
-            <Row gutter={14}>
-              <Col span={12}>
-                <Form.Item name="secondary" label={kind === "teachers" ? "Adresse e-mail" : "Niveaux concernés"} rules={[{ required: true, message: "Champ requis." }]}><Input prefix={kind === "teachers" ? <MailOutlined /> : <UserOutlined />} /></Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="count" label={content.countLabel} rules={[{ required: true, message: "Champ requis." }]}>
-                  <Input prefix={<ClockCircleOutlined />} placeholder="Ex. 6 h / sem." />
-                </Form.Item>
-              </Col>
-            </Row>
-            {kind === "teachers" && (
-              <Form.Item name="phone" label="Téléphone (facultatif)"><Input prefix={<PhoneOutlined />} placeholder="+243..." /></Form.Item>
-            )}
-          </Form>
-        ) : (
-          <div className="academic-directory__modal-placeholder">
-            {content.icon}
-            <strong>Nouveau dossier administratif</strong>
-            <p>Le formulaire détaillé sera relié aux données de l’établissement.</p>
-          </div>
-        )}
+              <Row gutter={14}>
+                <Col span={12}>
+                  <Form.Item
+                    name="teacherId"
+                    label="Professeur"
+                    rules={[
+                      { required: true, message: "Choisissez le professeur." },
+                    ]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      options={teachers.map((item) => ({
+                        value: item.id,
+                        label: item.label,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="weight"
+                    label="Pondération"
+                    rules={[
+                      { required: true, message: "Indiquez la pondération." },
+                    ]}
+                  >
+                    <InputNumber min={0.01} precision={2} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </>
+          )}
+
+          {kind === "homeroom" && (
+            <p>Le module Titulaires sera configuré à l’étape suivante.</p>
+          )}
+        </Form>
       </Modal>
     </section>
   );
