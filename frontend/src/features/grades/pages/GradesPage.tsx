@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  type ClipboardEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   BookOutlined,
   ReloadOutlined,
@@ -52,6 +58,23 @@ const gradeKey = (studentId: string, courseId: string) =>
 const clampGradeValue = (value: number, weight: number) =>
   Math.min(weight, Math.max(0, Math.round(value)));
 
+const getGradeInputId = (studentId: string, courseId: string) =>
+  `grade-input-${studentId}-${courseId}`;
+
+const ALLOWED_GRADE_KEYS = new Set([
+  "Backspace",
+  "Delete",
+  "Tab",
+  "Enter",
+  "Escape",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+]);
+
 const errorMessage = (error: unknown, fallback: string) => {
   if (!axios.isAxiosError(error)) return fallback;
   const value = error.response?.data?.message;
@@ -73,13 +96,20 @@ const GradesPage = () => {
     setLoading(true);
     try {
       const response = await api.get<Gradebook>("/grades/homeroom");
+      const courseWeights = new Map(
+        response.data.courses.map((course) => [course.id, course.weight]),
+      );
       setData(response.data);
       setGrades(
         Object.fromEntries(
-          response.data.grades.map((grade) => [
-            gradeKey(grade.enrollmentId, grade.courseClassId),
-            grade.value,
-          ]),
+          response.data.grades.map((grade) => {
+            const weight =
+              courseWeights.get(grade.courseClassId) ?? grade.value;
+            return [
+              gradeKey(grade.enrollmentId, grade.courseClassId),
+              clampGradeValue(grade.value, weight),
+            ];
+          }),
         ),
       );
     } catch (error) {
@@ -103,14 +133,116 @@ const GradesPage = () => {
     );
   }, [data, query]);
 
+  const focusGradeCell = (rowIndex: number, columnIndex: number) => {
+    if (!data) return;
+
+    const targetStudent = students[rowIndex];
+    const targetCourse = data.courses[columnIndex];
+
+    if (!targetStudent || !targetCourse) return;
+
+    const targetInput = document.getElementById(
+      getGradeInputId(targetStudent.id, targetCourse.id),
+    );
+
+    if (!(targetInput instanceof HTMLInputElement)) return;
+
+    targetInput.focus();
+    targetInput.select();
+  };
+
+  const handleGradeKeyDown = (
+    event: KeyboardEvent<HTMLElement>,
+    rowIndex: number,
+    columnIndex: number,
+  ) => {
+    const { key, ctrlKey, metaKey } = event;
+
+    if (
+      key === "ArrowUp" ||
+      key === "ArrowDown" ||
+      key === "ArrowLeft" ||
+      key === "ArrowRight"
+    ) {
+      event.preventDefault();
+
+      const nextRowIndex =
+        key === "ArrowUp"
+          ? rowIndex - 1
+          : key === "ArrowDown"
+            ? rowIndex + 1
+            : rowIndex;
+
+      const nextColumnIndex =
+        key === "ArrowLeft"
+          ? columnIndex - 1
+          : key === "ArrowRight"
+            ? columnIndex + 1
+            : columnIndex;
+
+      if (
+        nextRowIndex >= 0 &&
+        nextRowIndex < students.length &&
+        nextColumnIndex >= 0 &&
+        nextColumnIndex < (data?.courses.length ?? 0)
+      ) {
+        requestAnimationFrame(() => focusGradeCell(nextRowIndex, nextColumnIndex));
+      }
+
+      return;
+    }
+
+    if (
+      (ctrlKey || metaKey) &&
+      ["a", "c", "v", "x"].includes(key.toLowerCase())
+    ) {
+      return;
+    }
+
+    if (ALLOWED_GRADE_KEYS.has(key) || /^\d$/.test(key)) {
+      return;
+    }
+
+    event.preventDefault();
+  };
+
+  const handleGradePaste = (
+    event: ClipboardEvent<HTMLElement>,
+    currentKey: string,
+    weight: number,
+  ) => {
+    const raw = event.clipboardData.getData("text").trim();
+
+    if (!/^\d+$/.test(raw)) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    const numeric = Number(raw);
+
+    if (Number.isNaN(numeric)) {
+      return;
+    }
+
+    setGrades((current) => ({
+      ...current,
+      [currentKey]: clampGradeValue(numeric, weight),
+    }));
+  };
+
   const save = async () => {
     if (!data?.period) return;
+    const courseWeights = new Map(
+      data.courses.map((course) => [course.id, course.weight]),
+    );
     const payload = Object.entries(grades).map(([key, value]) => {
       const [enrollmentId, courseClassId] = key.split(":");
+      const weight = courseWeights.get(courseClassId) ?? value;
       return {
         enrollmentId: Number(enrollmentId),
         courseClassId: Number(courseClassId),
-        value,
+        value: clampGradeValue(value, weight),
       };
     });
     setSaving(true);
@@ -216,7 +348,7 @@ const GradesPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {students.map((student) => (
+                {students.map((student, rowIndex) => (
                   <tr key={student.id}>
                     <th className="gradebook__student-column">
                       <div className="gradebook__student">
@@ -230,8 +362,9 @@ const GradesPage = () => {
                         </div>
                       </div>
                     </th>
-                    {data.courses.map((course) => {
+                    {data.courses.map((course, columnIndex) => {
                       const key = gradeKey(student.id, course.id);
+                      const inputId = getGradeInputId(student.id, course.id);
                       const value = grades[key];
                       const isFail =
                         value !== undefined && value < course.weight / 2;
@@ -245,11 +378,25 @@ const GradesPage = () => {
                             min={0}
                             max={course.weight}
                             precision={0}
-                            parser={(displayValue) =>
-                              (displayValue ?? "").replace(/\D+/g, "")
-                            }
+                            id={inputId}
+                            inputMode="numeric"
+                            parser={(displayValue) => {
+                              const sanitized = (displayValue ?? "").replace(
+                                /\D+/g,
+                                "",
+                              );
+                              return sanitized === ""
+                                ? Number.NaN
+                                : Number(sanitized);
+                            }}
                             value={value}
                             disabled={!data.period}
+                            onKeyDown={(event) =>
+                              handleGradeKeyDown(event, rowIndex, columnIndex)
+                            }
+                            onPaste={(event) =>
+                              handleGradePaste(event, key, course.weight)
+                            }
                             onChange={(value) =>
                               setGrades((current) => {
                                 if (value === null) {

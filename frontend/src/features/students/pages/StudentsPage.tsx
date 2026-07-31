@@ -71,13 +71,29 @@ interface ClassOption {
 
 const initialStudents: StudentRow[] = [];
 
-interface StudentFormValues {
+interface StudentDateValue {
+  format: (template: string) => string;
+}
+
+interface StudentDraftValues {
   lastName: string;
   middleName: string;
   firstName: string;
   gender: "Fille" | "Garçon";
   classId: string;
-  birthDate: { format: (template: string) => string };
+  birthDate: StudentDateValue;
+  address: string;
+  phone?: string;
+}
+
+interface StudentFormValues {
+  students?: StudentDraftValues[];
+  lastName: string;
+  middleName: string;
+  firstName: string;
+  gender: "Fille" | "Garçon";
+  classId: string;
+  birthDate: StudentDateValue;
   address: string;
   phone?: string;
 }
@@ -92,11 +108,47 @@ const StudentsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRow | null>(null);
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
-  const [studentToDelete, setStudentToDelete] = useState<StudentRow | null>(null);
+  const [batchSize, setBatchSize] = useState(1);
+  const [studentToDelete, setStudentToDelete] = useState<StudentRow | null>(
+    null,
+  );
   const [deletePassword, setDeletePassword] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form] = Form.useForm<StudentFormValues>();
+
+  const buildStudentPayload = (
+    values: StudentDraftValues,
+    photo?: string | null,
+  ) => ({
+    classId: Number(values.classId),
+    lastName: values.lastName,
+    postName: values.middleName,
+    firstName: values.firstName,
+    gender: values.gender,
+    birthDate: values.birthDate.format("YYYY-MM-DD"),
+    address: values.address,
+    guardianPhone: values.phone,
+    photo: photo ?? undefined,
+  });
+
+  const syncBatchStudentFields = (nextSize: number) => {
+    const currentRows =
+      (form.getFieldValue("students") as
+        | Partial<StudentDraftValues>[]
+        | undefined) ?? [];
+    const nextRows = Array.from(
+      { length: nextSize },
+      (_, index) => currentRows[index] ?? {},
+    );
+    form.setFieldsValue({ students: nextRows as StudentDraftValues[] });
+  };
+
+  const handleBatchSizeChange = (nextSize: number) => {
+    setBatchSize(nextSize);
+    if (nextSize > 1) setStudentPhoto(null);
+    syncBatchStudentFields(nextSize);
+  };
 
   const loadStudents = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -123,7 +175,9 @@ const StudentsPage = () => {
       api
         .get<ClassOption[]>("/classes")
         .then((response) =>
-          setClasses(response.data.filter((schoolClass) => schoolClass.isActive)),
+          setClasses(
+            response.data.filter((schoolClass) => schoolClass.isActive),
+          ),
         )
         .catch(() => setClasses([]));
     };
@@ -190,40 +244,78 @@ const StudentsPage = () => {
   ).size;
 
   const saveStudent = async () => {
-    const values = await form.validateFields();
-    if (!studentPhoto) {
-      message.error("La photo de l’élève est obligatoire.");
-      return;
-    }
     setIsSaving(true);
     try {
-      const payload = {
-        classId: Number(values.classId),
-        lastName: values.lastName,
-        postName: values.middleName,
-        firstName: values.firstName,
-        gender: values.gender,
-        birthDate: values.birthDate.format("YYYY-MM-DD"),
-        address: values.address,
-        guardianPhone: values.phone,
-        photo: studentPhoto,
-      };
-      const response = editingStudent
-        ? await api.patch<{ id: string }>(
-            `/students/${editingStudent.id}`,
-            payload,
-          )
-        : await api.post<{ matricule: string }>("/students", payload);
+      if (editingStudent) {
+        const values = await form.validateFields();
+        await api.patch<{ id: string }>(
+          `/students/${editingStudent.id}`,
+          buildStudentPayload(values as StudentDraftValues, studentPhoto),
+        );
+        message.success("Élève modifié avec succès.");
+      } else {
+        const values = await form.validateFields();
+        const studentsToCreate = (values.students ?? []).slice(0, batchSize);
+
+        if (!studentsToCreate.length) {
+          message.error("Ajoutez au moins un élève à enregistrer.");
+          return;
+        }
+
+        if (batchSize === 1) {
+          const response = await api.post<{ matricule: string }>(
+            "/students",
+            buildStudentPayload(studentsToCreate[0], studentPhoto),
+          );
+          message.success(
+            `Élève ajouté · matricule ${response.data.matricule}`,
+          );
+        } else {
+          const creationResults = await Promise.allSettled(
+            studentsToCreate.map((studentValues) =>
+              api.post<{ matricule: string }>(
+                "/students",
+                buildStudentPayload(studentValues),
+              ),
+            ),
+          );
+
+          const successfulCreations = creationResults.filter(
+            (result): result is PromiseFulfilledResult<any> =>
+              result.status === "fulfilled",
+          );
+          const failedCreations = creationResults.filter(
+            (result): result is PromiseRejectedResult =>
+              result.status === "rejected",
+          );
+
+          if (!successfulCreations.length && failedCreations.length) {
+            throw failedCreations[0].reason;
+          }
+
+          if (!failedCreations.length) {
+            message.success(
+              `${successfulCreations.length} élèves ajoutés avec succès.`,
+            );
+          } else {
+            const firstFailureMessage = getApiErrorMessage(
+              failedCreations[0].reason,
+              "Certains élèves n'ont pas pu être enregistrés.",
+            );
+            message.warning(
+              `${successfulCreations.length} ajouté(s), ${failedCreations.length} en échec. ${firstFailureMessage}`,
+            );
+          }
+        }
+      }
+
       await loadStudents();
       form.resetFields();
       setIsModalOpen(false);
       setEditingStudent(null);
       setStudentPhoto(null);
-      message.success(
-        editingStudent
-          ? "Élève modifié avec succès."
-          : `Élève ajouté · matricule ${"matricule" in response.data ? response.data.matricule : ""}`,
-      );
+      setBatchSize(1);
+      form.setFieldsValue({ students: [{} as StudentDraftValues] });
     } catch (error) {
       message.error(
         getApiErrorMessage(
@@ -240,13 +332,16 @@ const StudentsPage = () => {
 
   const openCreateModal = () => {
     setEditingStudent(null);
+    setBatchSize(1);
     setStudentPhoto(null);
     form.resetFields();
+    form.setFieldsValue({ students: [{} as StudentDraftValues] });
     setIsModalOpen(true);
   };
 
   const openEditModal = (student: StudentRow) => {
     setEditingStudent(student);
+    setBatchSize(1);
     setStudentPhoto(student.photo || null);
     form.setFieldsValue({
       lastName: student.lastName ?? "",
@@ -298,8 +393,22 @@ const StudentsPage = () => {
         </div>
       ),
     },
-    { title: "Matricule", dataIndex: "matricule", key: "matricule", render: (value: string) => <code className="students-directory__matricule">{value}</code> },
-    { title: "Classe", dataIndex: "className", key: "className", render: (value: string) => <Tag className="students-directory__class-tag">{value}</Tag> },
+    {
+      title: "Matricule",
+      dataIndex: "matricule",
+      key: "matricule",
+      render: (value: string) => (
+        <code className="students-directory__matricule">{value}</code>
+      ),
+    },
+    {
+      title: "Classe",
+      dataIndex: "className",
+      key: "className",
+      render: (value: string) => (
+        <Tag className="students-directory__class-tag">{value}</Tag>
+      ),
+    },
     { title: "Genre", dataIndex: "gender", key: "gender" },
     {
       title: "Actions",
@@ -354,10 +463,30 @@ const StudentsPage = () => {
       </header>
 
       <Row gutter={[14, 14]} className="students-directory__summary">
-        <Col xs={12} md={6}><Card><strong>{students.length}</strong><span>Total des élèves</span></Card></Col>
-        <Col xs={12} md={6}><Card><strong>{activeStudents}</strong><span>Élèves actifs</span></Card></Col>
-        <Col xs={12} md={6}><Card><strong>{representedClasses}</strong><span>Classes représentées</span></Card></Col>
-        <Col xs={12} md={6}><Card><strong>{girlsCount}</strong><span>Filles inscrites</span></Card></Col>
+        <Col xs={12} md={6}>
+          <Card>
+            <strong>{students.length}</strong>
+            <span>Total des élèves</span>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card>
+            <strong>{activeStudents}</strong>
+            <span>Élèves actifs</span>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card>
+            <strong>{representedClasses}</strong>
+            <span>Classes représentées</span>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card>
+            <strong>{girlsCount}</strong>
+            <span>Filles inscrites</span>
+          </Card>
+        </Col>
       </Row>
 
       <Card className="students-directory__card">
@@ -366,7 +495,10 @@ const StudentsPage = () => {
             <span>Répertoire</span>
             <h2>Liste des élèves</h2>
           </div>
-          <small>{students.length} dossier{students.length !== 1 ? "s" : ""} enregistré{students.length !== 1 ? "s" : ""}</small>
+          <small>
+            {students.length} dossier{students.length !== 1 ? "s" : ""}{" "}
+            enregistré{students.length !== 1 ? "s" : ""}
+          </small>
         </div>
         <div className="students-directory__toolbar">
           <Input
@@ -382,7 +514,9 @@ const StudentsPage = () => {
             onChange={setSelectedClass}
             options={classFilters.map((value) => ({ value, label: value }))}
           />
-          <span className="students-directory__count"><TeamOutlined /> {filteredStudents.length} élèves</span>
+          <span className="students-directory__count">
+            <TeamOutlined /> {filteredStudents.length} élèves
+          </span>
         </div>
         <Table<StudentRow>
           columns={columns}
@@ -397,22 +531,51 @@ const StudentsPage = () => {
         width={720}
         title={
           <div className="students-directory__modal-title">
-            <span><IdcardOutlined /></span>
+            <span>
+              <IdcardOutlined />
+            </span>
             <div>
-              <strong>{editingStudent ? "Modifier l’élève" : "Nouvel élève"}</strong>
-              <small>{editingStudent ? editingStudent.matricule : "Ajouter au répertoire"}</small>
+              <strong>
+                {editingStudent
+                  ? "Modifier l’élève"
+                  : batchSize > 1
+                    ? "Nouveaux élèves"
+                    : "Nouvel élève"}
+              </strong>
+              <small>
+                {editingStudent
+                  ? editingStudent.matricule
+                  : "Ajouter au répertoire"}
+              </small>
             </div>
           </div>
         }
         open={isModalOpen}
-        onCancel={() => { setIsModalOpen(false); setEditingStudent(null); setStudentPhoto(null); form.resetFields(); }}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setEditingStudent(null);
+          setBatchSize(1);
+          setStudentPhoto(null);
+          form.resetFields();
+          form.setFieldsValue({ students: [{} as StudentDraftValues] });
+        }}
         onOk={saveStudent}
         confirmLoading={isSaving}
-        okText={editingStudent ? "Enregistrer" : "Ajouter"}
+        okText={
+          editingStudent
+            ? "Enregistrer"
+            : batchSize > 1
+              ? `Ajouter ${batchSize} élèves`
+              : "Ajouter"
+        }
         cancelText="Annuler"
         className="students-directory__modal"
       >
-        <Form form={form} layout="vertical" className="students-directory__student-form">
+        <Form
+          form={form}
+          layout="vertical"
+          className="students-directory__student-form"
+        >
           <div className="students-directory__form-banner">
             <SafetyCertificateOutlined />
             <div>
@@ -421,123 +584,337 @@ const StudentsPage = () => {
             </div>
             <b>2025—2026</b>
           </div>
-          <div className="students-directory__photo-field">
-            <Avatar
-              size={72}
-              src={studentPhoto || undefined}
-              icon={<UserOutlined />}
+          {!editingStudent && (
+            <Form.Item
+              label="Nombre d’élèves à ajouter"
+              extra="Vous pouvez enregistrer jusqu’à 10 élèves en une seule validation."
+            >
+              <Select
+                value={batchSize}
+                onChange={handleBatchSizeChange}
+                options={Array.from({ length: 10 }, (_, index) => {
+                  const value = index + 1;
+                  return {
+                    value,
+                    label: `${value} élève${value > 1 ? "s" : ""}`,
+                  };
+                })}
+              />
+            </Form.Item>
+          )}
+
+          {!editingStudent && batchSize > 1 && (
+            <Alert
+              showIcon
+              type="info"
+              style={{ marginBottom: 16 }}
+              message="Ajout groupé activé"
+              description="La photo n’est pas gérée en lot. Vous pourrez l’ajouter ensuite depuis la modification de chaque élève."
             />
-            <div>
-              <strong>Photo de l’élève</strong>
-              <Upload
-                accept="image/jpeg,image/png,image/webp"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  if (!file.type.startsWith("image/")) {
-                    message.error("Sélectionnez une image valide.");
-                    return Upload.LIST_IGNORE;
-                  }
-                  if (file.size > 2 * 1024 * 1024) {
-                    message.error("La photo ne doit pas dépasser 2 Mo.");
-                    return Upload.LIST_IGNORE;
-                  }
-                  const reader = new FileReader();
-                  reader.onload = () => setStudentPhoto(String(reader.result));
-                  reader.readAsDataURL(file);
-                  return false;
-                }}
-              >
-                <Button size="small" icon={<UploadOutlined />}>
-                  {studentPhoto ? "Changer la photo" : "Choisir une photo"}
-                </Button>
-              </Upload>
+          )}
+
+          {(editingStudent || batchSize === 1) && (
+            <div className="students-directory__photo-field">
+              <Avatar
+                size={72}
+                src={studentPhoto || undefined}
+                icon={<UserOutlined />}
+              />
+              <div>
+                <strong>Photo de l’élève (facultatif)</strong>
+                <Upload
+                  accept="image/jpeg,image/png,image/webp"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    if (!file.type.startsWith("image/")) {
+                      message.error("Sélectionnez une image valide.");
+                      return Upload.LIST_IGNORE;
+                    }
+                    if (file.size > 2 * 1024 * 1024) {
+                      message.error("La photo ne doit pas dépasser 2 Mo.");
+                      return Upload.LIST_IGNORE;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () =>
+                      setStudentPhoto(String(reader.result));
+                    reader.readAsDataURL(file);
+                    return false;
+                  }}
+                >
+                  <Button size="small" icon={<UploadOutlined />}>
+                    {studentPhoto ? "Changer la photo" : "Choisir une photo"}
+                  </Button>
+                </Upload>
+              </div>
             </div>
-          </div>
-          <div className="students-directory__form-section-title">
-            <span>01</span><div><strong>Identité de l’élève</strong><small>Informations figurant sur les documents officiels</small></div>
-          </div>
-          <Row gutter={14}>
-            <Col span={8}>
+          )}
+
+          {editingStudent ? (
+            <>
+              <div className="students-directory__form-section-title">
+                <span>01</span>
+                <div>
+                  <strong>Identité de l’élève</strong>
+                  <small>
+                    Informations figurant sur les documents officiels
+                  </small>
+                </div>
+              </div>
+              <Row gutter={14}>
+                <Col span={8}>
+                  <Form.Item
+                    name="lastName"
+                    label="Nom"
+                    normalize={(value: string) => value.toLocaleUpperCase("fr")}
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Input prefix={<UserOutlined />} placeholder="NOM" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name="middleName"
+                    label="Postnom"
+                    normalize={(value: string) => value.toLocaleUpperCase("fr")}
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Input prefix={<UserOutlined />} placeholder="POSTNOM" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name="firstName"
+                    label="Prénom"
+                    normalize={(value: string) => {
+                      const normalized = value.toLocaleLowerCase("fr");
+                      return normalized
+                        ? `${normalized.charAt(0).toLocaleUpperCase("fr")}${normalized.slice(1)}`
+                        : normalized;
+                    }}
+                    rules={[{ required: true, message: "Champ requis." }]}
+                  >
+                    <Input prefix={<UserOutlined />} placeholder="Prénom" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <div className="students-directory__form-section-title">
+                <span>02</span>
+                <div>
+                  <strong>Scolarité et naissance</strong>
+                  <small>Classe, sexe et date de naissance</small>
+                </div>
+              </div>
+              <Row gutter={14}>
+                <Col span={12}>
+                  <Form.Item
+                    name="classId"
+                    label="Classe"
+                    rules={[
+                      { required: true, message: "Choisissez une classe." },
+                    ]}
+                  >
+                    <Select
+                      placeholder="Sélectionner une classe"
+                      options={classes.map((schoolClass) => ({
+                        value: schoolClass.id,
+                        label: schoolClass.label,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="gender"
+                    label="Sexe"
+                    rules={[{ required: true, message: "Choisissez le sexe." }]}
+                  >
+                    <Select
+                      options={[
+                        { value: "Fille", label: "Fille" },
+                        { value: "Garçon", label: "Garçon" },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={14}>
+                <Col span={12}>
+                  <Form.Item
+                    name="birthDate"
+                    label="Date de naissance"
+                    rules={[
+                      {
+                        required: true,
+                        message: "Choisissez la date de naissance.",
+                      },
+                    ]}
+                  >
+                    <DatePicker
+                      suffixIcon={<CalendarOutlined />}
+                      format="DD/MM/YYYY"
+                      placeholder="Jour / Mois / Année"
+                      disabledDate={(date) => date.valueOf() > Date.now()}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="phone" label="Téléphone (facultatif)">
+                    <Input prefix={<PhoneOutlined />} placeholder="+243..." />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <div className="students-directory__form-section-title">
+                <span>03</span>
+                <div>
+                  <strong>Coordonnées</strong>
+                  <small>Adresse physique et contact</small>
+                </div>
+              </div>
               <Form.Item
-                name="lastName"
-                label="Nom"
-                normalize={(value: string) => value.toLocaleUpperCase("fr")}
-                rules={[{ required: true, message: "Champ requis." }]}
+                name="address"
+                label="Adresse physique"
+                rules={[{ required: true, message: "Saisissez l’adresse." }]}
               >
-                <Input prefix={<UserOutlined />} placeholder="NOM" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="middleName"
-                label="Postnom"
-                normalize={(value: string) => value.toLocaleUpperCase("fr")}
-                rules={[{ required: true, message: "Champ requis." }]}
-              >
-                <Input prefix={<UserOutlined />} placeholder="POSTNOM" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="firstName"
-                label="Prénom"
-                normalize={(value: string) => {
-                  const normalized = value.toLocaleLowerCase("fr");
-                  return normalized
-                    ? `${normalized.charAt(0).toLocaleUpperCase("fr")}${normalized.slice(1)}`
-                    : normalized;
-                }}
-                rules={[{ required: true, message: "Champ requis." }]}
-              >
-                <Input prefix={<UserOutlined />} placeholder="Prénom" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <div className="students-directory__form-section-title">
-            <span>02</span><div><strong>Scolarité et naissance</strong><small>Classe, sexe et date de naissance</small></div>
-          </div>
-          <Row gutter={14}>
-            <Col span={12}>
-              <Form.Item name="classId" label="Classe" rules={[{ required: true, message: "Choisissez une classe." }]}>
-                <Select
-                  placeholder="Sélectionner une classe"
-                  options={classes.map((schoolClass) => ({
-                    value: schoolClass.id,
-                    label: schoolClass.label,
-                  }))}
+                <Input
+                  prefix={<HomeOutlined />}
+                  placeholder="Quartier, commune, ville"
                 />
               </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="gender" label="Sexe" rules={[{ required: true, message: "Choisissez le sexe." }]}>
-                <Select options={[{ value: "Fille", label: "Fille" }, { value: "Garçon", label: "Garçon" }]} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={14}>
-            <Col span={12}>
-              <Form.Item
-                name="birthDate"
-                label="Date de naissance"
-                rules={[{ required: true, message: "Choisissez la date de naissance." }]}
+            </>
+          ) : (
+            Array.from({ length: batchSize }).map((_, index) => (
+              <Card
+                key={`student-form-${index}`}
+                size="small"
+                style={{ marginBottom: index === batchSize - 1 ? 0 : 14 }}
               >
-                <DatePicker
-                  suffixIcon={<CalendarOutlined />}
-                  format="DD/MM/YYYY"
-                  placeholder="Jour / Mois / Année"
-                  disabledDate={(date) => date.valueOf() > Date.now()}
-                  style={{ width: "100%" }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}><Form.Item name="phone" label="Téléphone (facultatif)"><Input prefix={<PhoneOutlined />} placeholder="+243..." /></Form.Item></Col>
-          </Row>
-          <div className="students-directory__form-section-title">
-            <span>03</span><div><strong>Coordonnées</strong><small>Adresse physique et contact</small></div>
-          </div>
-          <Form.Item name="address" label="Adresse physique" rules={[{ required: true, message: "Saisissez l’adresse." }]}>
-            <Input prefix={<HomeOutlined />} placeholder="Quartier, commune, ville" />
-          </Form.Item>
+                <div className="students-directory__form-section-title">
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <div>
+                    <strong>Élève {index + 1}</strong>
+                    <small>Renseignez les informations de cette fiche.</small>
+                  </div>
+                </div>
+                <Row gutter={14}>
+                  <Col span={8}>
+                    <Form.Item
+                      name={["students", index, "lastName"]}
+                      label="Nom"
+                      normalize={(value: string) =>
+                        value.toLocaleUpperCase("fr")
+                      }
+                      rules={[{ required: true, message: "Champ requis." }]}
+                    >
+                      <Input prefix={<UserOutlined />} placeholder="NOM" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item
+                      name={["students", index, "middleName"]}
+                      label="Postnom"
+                      normalize={(value: string) =>
+                        value.toLocaleUpperCase("fr")
+                      }
+                      rules={[{ required: true, message: "Champ requis." }]}
+                    >
+                      <Input prefix={<UserOutlined />} placeholder="POSTNOM" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item
+                      name={["students", index, "firstName"]}
+                      label="Prénom"
+                      normalize={(value: string) => {
+                        const normalized = value.toLocaleLowerCase("fr");
+                        return normalized
+                          ? `${normalized.charAt(0).toLocaleUpperCase("fr")}${normalized.slice(1)}`
+                          : normalized;
+                      }}
+                      rules={[{ required: true, message: "Champ requis." }]}
+                    >
+                      <Input prefix={<UserOutlined />} placeholder="Prénom" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={14}>
+                  <Col span={12}>
+                    <Form.Item
+                      name={["students", index, "classId"]}
+                      label="Classe"
+                      rules={[
+                        { required: true, message: "Choisissez une classe." },
+                      ]}
+                    >
+                      <Select
+                        placeholder="Sélectionner une classe"
+                        options={classes.map((schoolClass) => ({
+                          value: schoolClass.id,
+                          label: schoolClass.label,
+                        }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      name={["students", index, "gender"]}
+                      label="Sexe"
+                      rules={[
+                        { required: true, message: "Choisissez le sexe." },
+                      ]}
+                    >
+                      <Select
+                        options={[
+                          { value: "Fille", label: "Fille" },
+                          { value: "Garçon", label: "Garçon" },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={14}>
+                  <Col span={12}>
+                    <Form.Item
+                      name={["students", index, "birthDate"]}
+                      label="Date de naissance"
+                      rules={[
+                        {
+                          required: true,
+                          message: "Choisissez la date de naissance.",
+                        },
+                      ]}
+                    >
+                      <DatePicker
+                        suffixIcon={<CalendarOutlined />}
+                        format="DD/MM/YYYY"
+                        placeholder="Jour / Mois / Année"
+                        disabledDate={(date) => date.valueOf() > Date.now()}
+                        style={{ width: "100%" }}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      name={["students", index, "phone"]}
+                      label="Téléphone (facultatif)"
+                    >
+                      <Input prefix={<PhoneOutlined />} placeholder="+243..." />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item
+                  name={["students", index, "address"]}
+                  label="Adresse physique"
+                  rules={[{ required: true, message: "Saisissez l’adresse." }]}
+                >
+                  <Input
+                    prefix={<HomeOutlined />}
+                    placeholder="Quartier, commune, ville"
+                  />
+                </Form.Item>
+              </Card>
+            ))
+          )}
         </Form>
       </Modal>
 
@@ -547,7 +924,9 @@ const StudentsPage = () => {
         className="students-directory__delete-modal"
         title={
           <div className="students-directory__delete-title">
-            <span><ExclamationCircleOutlined /></span>
+            <span>
+              <ExclamationCircleOutlined />
+            </span>
             <div>
               <strong>Confirmer la suppression</strong>
               <small>Cette action nécessite votre mot de passe</small>
