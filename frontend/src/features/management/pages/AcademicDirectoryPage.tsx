@@ -7,6 +7,8 @@ import {
   PlusOutlined,
   ReadOutlined,
   ReloadOutlined,
+  SwapOutlined,
+  HistoryOutlined,
   SearchOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -17,17 +19,20 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Form,
   Input,
   InputNumber,
   Modal,
   Row,
   Select,
+  Space,
   Table,
   Upload,
   message,
 } from "antd";
 import axios from "axios";
+import dayjs, { type Dayjs } from "dayjs";
 import { api } from "../../../lib/api";
 
 type DirectoryKind =
@@ -65,6 +70,23 @@ interface FormValues {
 interface ResetPasswordValues {
   password: string;
   confirmation: string;
+}
+
+interface ReplacementValues {
+  teacherId: string;
+  effectiveDate: Dayjs;
+  reason?: string;
+}
+
+interface AssignmentHistoryRow {
+  id: string;
+  teacher: string;
+  course: string;
+  className: string;
+  startDate: string;
+  endDate?: string | null;
+  reason?: string | null;
+  isActive: boolean;
 }
 
 interface Choice {
@@ -145,6 +167,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const content = contentByKind[kind];
   const [form] = Form.useForm<FormValues>();
   const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
+  const [replacementForm] = Form.useForm<ReplacementValues>();
   const [rows, setRows] = useState<DirectoryRow[]>([]);
   const [classes, setClasses] = useState<Choice[]>([]);
   const [courses, setCourses] = useState<Choice[]>([]);
@@ -379,9 +402,9 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
         }
       } else if (kind === "assignments") {
         const payload = {
-          classId: Number(values.classId),
-          courseId: Number(values.courseId),
-          teacherId: Number(values.teacherId),
+          classId: Number(editingRow?.classId ?? values.classId),
+          courseId: Number(editingRow?.courseId ?? values.courseId),
+          teacherId: Number(editingRow?.teacherId ?? values.teacherId),
           weight: values.weight,
         };
         if (editingRow) {
@@ -500,6 +523,112 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     });
   };
 
+  const replaceCourseTeacher = (row: DirectoryRow) => {
+    replacementForm.setFieldsValue({ teacherId: undefined, effectiveDate: dayjs(), reason: "" });
+    Modal.confirm({
+      centered: true,
+      width: 520,
+      title: `Remplacer le professeur de ${row.primary}`,
+      icon: <SwapOutlined />,
+      content: (
+        <Form form={replacementForm} layout="vertical" style={{ marginTop: 18 }}>
+          <p>{row.detail} enseigne actuellement ce cours en {row.secondary}.</p>
+          <Form.Item name="teacherId" label="Nouveau professeur" rules={[{ required: true, message: "Choisissez le remplaçant." }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="Sélectionner le nouveau professeur"
+              options={teachers.filter((teacher) => teacher.id !== row.teacherId).map((teacher) => ({ value: teacher.id, label: teacher.label }))}
+            />
+          </Form.Item>
+          <Form.Item name="effectiveDate" label="Date de prise d’effet" rules={[{ required: true, message: "Choisissez la date." }]}>
+            <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="reason" label="Motif (facultatif)">
+            <Input.TextArea maxLength={500} showCount placeholder="Mutation, indisponibilité, réorganisation…" />
+          </Form.Item>
+        </Form>
+      ),
+      okText: "Confirmer le remplacement",
+      cancelText: "Annuler",
+      async onOk() {
+        try {
+          const values = await replacementForm.validateFields();
+          await api.post(`/course-assignments/${row.key}/replace`, {
+            teacherId: Number(values.teacherId),
+            effectiveDate: values.effectiveDate.format("YYYY-MM-DD"),
+            reason: values.reason,
+          });
+          message.success("Le remplacement est enregistré sans modifier les cotes.");
+          await loadData();
+        } catch (error) {
+          if (error && typeof error === "object" && "errorFields" in error) throw error;
+          message.error(errorMessage(error, "Remplacement impossible."));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const deleteDirectoryItem = (row: DirectoryRow) => {
+    const label = kind === "teachers" ? "ce professeur" : kind === "courses" ? "ce cours" : "cette classe";
+    Modal.confirm({
+      centered: true,
+      title: `Supprimer ${row.primary} ?`,
+      content: `Si ${label} possède déjà des données, celles-ci seront protégées et conservées dans l’historique.`,
+      okText: "Supprimer",
+      okButtonProps: { danger: true },
+      cancelText: "Annuler",
+      async onOk() {
+        try {
+          const response = await api.delete<{ deleted: boolean; archived?: boolean; requested?: boolean }>(`/${kind}/${row.key}`);
+          message.success(
+            response.data.requested
+              ? "Des données sont liées à cette classe. Demande envoyée au super administrateur."
+              : response.data.archived
+                ? `${row.primary} a été retiré des listes actives. Son historique est conservé.`
+                : `${row.primary} a été supprimé.`,
+          );
+          await loadData();
+        } catch (error) {
+          message.error(errorMessage(error, "Suppression impossible."));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const showAssignmentHistory = async () => {
+    try {
+      const history = (await api.get<AssignmentHistoryRow[]>("/course-assignments/history")).data;
+      Modal.info({
+        centered: true,
+        width: 900,
+        title: "Historique des professeurs par cours",
+        okText: "Fermer",
+        content: (
+          <Table
+            style={{ marginTop: 18 }}
+            rowKey="id"
+            size="small"
+            dataSource={history}
+            pagination={{ pageSize: 8 }}
+            columns={[
+              { title: "Cours", dataIndex: "course" },
+              { title: "Classe", dataIndex: "className" },
+              { title: "Professeur", dataIndex: "teacher" },
+              { title: "Début", render: (_, item) => dayjs(item.startDate).format("DD/MM/YYYY") },
+              { title: "Fin", render: (_, item) => item.endDate ? dayjs(item.endDate).format("DD/MM/YYYY") : "En cours" },
+              { title: "Motif", render: (_, item) => item.reason || "—" },
+            ]}
+          />
+        ),
+      });
+    } catch (error) {
+      message.error(errorMessage(error, "Historique impossible à charger."));
+    }
+  };
+
   const columns = [
     {
       title:
@@ -553,12 +682,12 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           },
         ]
       : []),
-    ...(["classes", "courses", "assignments", "homeroom"].includes(kind)
+    ...(["classes", "teachers", "courses", "assignments", "homeroom"].includes(kind)
       ? [
           {
             title: "Actions",
             key: "actions",
-            width: kind === "homeroom" || kind === "classes" ? 240 : 110,
+            width: ["homeroom", "classes", "teachers", "courses", "assignments"].includes(kind) ? 240 : 110,
             align: "right" as const,
             render: (_: unknown, row: DirectoryRow) => (
               <div className="academic-directory__row-actions">
@@ -570,35 +699,17 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                 >
                   Modifier
                 </Button>
-                {kind === "classes" && (
+                {kind === "assignments" && (
+                  <Button type="text" icon={<SwapOutlined />} onClick={() => replaceCourseTeacher(row)}>
+                    Remplacer
+                  </Button>
+                )}
+                {["classes", "teachers", "courses"].includes(kind) && (
                   <Button
                     danger
                     type="text"
                     icon={<DeleteOutlined />}
-                    onClick={() => {
-                      Modal.confirm({
-                        centered: true,
-                        title: `Supprimer ${row.primary} ?`,
-                        content: "Si cette classe contient des données, une demande sera envoyée au super administrateur.",
-                        okText: "Supprimer ou envoyer",
-                        okButtonProps: { danger: true },
-                        cancelText: "Annuler",
-                        async onOk() {
-                          try {
-                            const response = await api.delete<{ deleted: boolean; requested: boolean }>(`/classes/${row.key}`);
-                            message.success(
-                              response.data.requested
-                                ? "La classe contient des données. Demande envoyée au super administrateur."
-                                : "Classe supprimée.",
-                            );
-                            await loadData();
-                          } catch (error) {
-                            message.error(errorMessage(error, "Suppression impossible."));
-                            throw error;
-                          }
-                        },
-                      });
-                    }}
+                    onClick={() => deleteDirectoryItem(row)}
                   >
                     Supprimer
                   </Button>
@@ -669,13 +780,16 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           <h1>{content.title}</h1>
           <p>{content.description}</p>
         </div>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={openCreate}
-        >
-          {content.addLabel}
-        </Button>
+        <Space wrap>
+          {kind === "assignments" && (
+            <Button icon={<HistoryOutlined />} onClick={() => void showAssignmentHistory()}>
+              Historique
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            {content.addLabel}
+          </Button>
+        </Space>
       </header>
 
       <div className="academic-directory__stats">
@@ -723,7 +837,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
               <strong>
                 {editingRow
                   ? kind === "assignments"
-                    ? "Modifier l’attribution"
+                    ? "Modifier la pondération"
                     : kind === "homeroom"
                       ? "Modifier le titulaire"
                     : kind === "classes"
@@ -858,7 +972,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
 
           {kind === "assignments" && (
             <>
-              <Row gutter={14}>
+              {!editingRow && <Row gutter={14}>
                 <Col span={12}>
                   <Form.Item
                     name="classId"
@@ -914,9 +1028,9 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                     />
                   </Form.Item>
                 </Col>
-              </Row>
+              </Row>}
               <Row gutter={14}>
-                <Col span={12}>
+                {!editingRow && <Col span={12}>
                   <Form.Item
                     name="teacherId"
                     label="Professeur"
@@ -933,16 +1047,22 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                       }))}
                     />
                   </Form.Item>
-                </Col>
-                <Col span={12}>
+                </Col>}
+                <Col span={editingRow ? 24 : 12}>
                   <Form.Item
                     name="weight"
-                    label="Pondération"
+                    label={editingRow ? "Nouvelle pondération" : "Pondération"}
                     rules={[
                       { required: true, message: "Indiquez la pondération." },
+                      {
+                        validator: (_, value) =>
+                          Number.isInteger(value) && value >= 1
+                            ? Promise.resolve()
+                            : Promise.reject(new Error("La pondération doit être un nombre entier.")),
+                      },
                     ]}
                   >
-                    <InputNumber min={0.01} precision={2} style={{ width: "100%" }} />
+                    <InputNumber min={1} step={1} precision={0} style={{ width: "100%" }} />
                   </Form.Item>
                 </Col>
               </Row>

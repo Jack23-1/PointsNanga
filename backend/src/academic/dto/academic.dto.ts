@@ -222,9 +222,23 @@ export class CreateCourseAssignmentDto {
   @Min(1)
   teacherId: number;
 
-  @IsNumber()
-  @Min(0.01)
+  @IsInt()
+  @Min(1)
   weight: number;
+}
+
+export class ReplaceCourseTeacherDto {
+  @IsInt()
+  @Min(1)
+  teacherId: number;
+
+  @IsDateString()
+  effectiveDate: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 export class CreateHomeroomAssignmentDto {

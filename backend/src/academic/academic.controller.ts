@@ -24,6 +24,7 @@ import {
   ToggleSchoolPeriodDto,
   ReviewDeletionRequestDto,
   ResetHomeroomPasswordDto,
+  ReplaceCourseTeacherDto,
 } from "./dto/academic.dto";
 
 @Controller()
@@ -182,8 +183,12 @@ export class AcademicController {
   }
 
   @Delete("teachers/:id")
-  deleteTeacher(@Param("id") id: string) {
-    return this.academicService.deleteTeacher(id);
+  deleteTeacher(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.deleteTeacher(id, String(request.user.schoolId));
   }
 
   @Get("courses")
@@ -215,8 +220,12 @@ export class AcademicController {
   }
 
   @Delete("courses/:id")
-  deleteCourse(@Param("id") id: string) {
-    return this.academicService.deleteCourse(id);
+  deleteCourse(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.deleteCourse(id, String(request.user.schoolId));
   }
 
   @Get("course-assignments")
@@ -234,6 +243,24 @@ export class AcademicController {
   ) {
     if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
     return this.academicService.createCourseAssignment(dto, String(request.user.schoolId));
+  }
+
+  @Get("course-assignments/history")
+  courseAssignmentHistory(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listCourseAssignmentHistory(String(request.user.schoolId));
+  }
+
+  @Post("course-assignments/:id/replace")
+  replaceCourseTeacher(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: ReplaceCourseTeacherDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.replaceCourseTeacher(id, dto, String(request.user.schoolId));
   }
 
   @Patch("course-assignments/:id")

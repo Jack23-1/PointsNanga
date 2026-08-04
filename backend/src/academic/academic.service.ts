@@ -17,6 +17,7 @@ import {
   CreateStudentDto,
   CreateTeacherDto,
   SaveHomeroomGradesDto,
+  ReplaceCourseTeacherDto,
   UpdateClassDto,
   UpdateCourseDto,
   UpdateOptionDto,
@@ -845,15 +846,23 @@ export class AcademicService {
     }
   }
 
-  async deleteTeacher(id: string) {
-    try {
-      await this.prisma.professeurs.delete({
-        where: { id_professeur: toBigInt(id) },
+  async deleteTeacher(id: string, schoolId: string) {
+    const id_professeur = toBigInt(id);
+    const teacher = await this.prisma.professeurs.findFirst({
+      where: { id_professeur, id_ecole: toBigInt(schoolId) },
+      include: { _count: { select: { affectations_professeurs: true, titulaires: true } } },
+    });
+    if (!teacher) throw new NotFoundException("Professeur introuvable.");
+    const hasHistory = teacher._count.affectations_professeurs > 0 || teacher._count.titulaires > 0;
+    if (hasHistory) {
+      await this.prisma.professeurs.update({
+        where: { id_professeur },
+        data: { statut: "INACTIF", date_mise_a_jour: new Date() },
       });
-      return { deleted: true };
-    } catch (error) {
-      handlePrismaError(error);
+      return { deleted: false, archived: true };
     }
+    await this.prisma.professeurs.delete({ where: { id_professeur } });
+    return { deleted: true, archived: false };
   }
 
   async listCourses(schoolId?: string) {
@@ -922,13 +931,22 @@ export class AcademicService {
     }
   }
 
-  async deleteCourse(id: string) {
-    try {
-      await this.prisma.cours.delete({ where: { id_cours: toBigInt(id) } });
-      return { deleted: true };
-    } catch (error) {
-      handlePrismaError(error);
+  async deleteCourse(id: string, schoolId: string) {
+    const id_cours = toBigInt(id);
+    const course = await this.prisma.cours.findFirst({
+      where: { id_cours, id_ecole: toBigInt(schoolId) },
+      include: { _count: { select: { cours_classes: true } } },
+    });
+    if (!course) throw new NotFoundException("Cours introuvable.");
+    if (course._count.cours_classes > 0) {
+      await this.prisma.cours.update({
+        where: { id_cours },
+        data: { statut: "INACTIF", date_mise_a_jour: new Date() },
+      });
+      return { deleted: false, archived: true };
     }
+    await this.prisma.cours.delete({ where: { id_cours } });
+    return { deleted: true, archived: false };
   }
 
   async listCourseAssignments(schoolId: string) {
@@ -955,6 +973,77 @@ export class AcademicService {
       weight: Number(assignment.cours_classes.ponderation),
       isActive: assignment.statut === "ACTIF",
     }));
+  }
+
+  async listCourseAssignmentHistory(schoolId: string) {
+    const records = await this.prisma.affectations_professeurs.findMany({
+      where: { cours_classes: { classes: { id_ecole: toBigInt(schoolId) } } },
+      include: {
+        professeurs: true,
+        cours_classes: { include: { cours: true, classes: true } },
+      },
+      orderBy: [{ date_affectation: "desc" }, { date_creation: "desc" }],
+    });
+    return records.map((record) => ({
+      id: record.id_affectation_professeur.toString(),
+      teacher: `${record.professeurs.nom} ${record.professeurs.prenom}`,
+      course: record.cours_classes.cours.libelle,
+      className: record.cours_classes.classes.libelle,
+      startDate: record.date_affectation,
+      endDate: record.date_fin,
+      reason: record.motif_remplacement,
+      isActive: record.statut === "ACTIF",
+    }));
+  }
+
+  async replaceCourseTeacher(id: string, dto: ReplaceCourseTeacherDto, schoolId: string) {
+    const id_affectation_professeur = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    const effectiveDate = new Date(`${dto.effectiveDate}T00:00:00.000Z`);
+    const [current, replacement] = await Promise.all([
+      this.prisma.affectations_professeurs.findFirst({
+        where: {
+          id_affectation_professeur,
+          statut: "ACTIF",
+          cours_classes: { classes: { id_ecole } },
+        },
+        include: { annees_scolaires: true },
+      }),
+      this.prisma.professeurs.findFirst({
+        where: { id_professeur: toBigInt(dto.teacherId), id_ecole, statut: "ACTIF" },
+      }),
+    ]);
+    if (!current) throw new NotFoundException("Attribution active introuvable.");
+    if (!replacement) throw new BadRequestException("Le nouveau professeur est invalide.");
+    if (current.id_professeur === replacement.id_professeur) {
+      throw new BadRequestException("Choisissez un professeur différent.");
+    }
+    if (effectiveDate < current.date_affectation) {
+      throw new BadRequestException("La date de remplacement précède le début de l’affectation.");
+    }
+    if (effectiveDate > current.annees_scolaires.date_fin) {
+      throw new BadRequestException("La date de remplacement dépasse la fin de l’année scolaire.");
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.affectations_professeurs.update({
+        where: { id_affectation_professeur },
+        data: {
+          statut: "INACTIF",
+          date_fin: effectiveDate,
+          motif_remplacement: clean(dto.reason),
+        },
+      });
+      const created = await tx.affectations_professeurs.create({
+        data: {
+          id_professeur: replacement.id_professeur,
+          id_cours_classe: current.id_cours_classe,
+          id_annee_scolaire: current.id_annee_scolaire,
+          date_affectation: effectiveDate,
+          statut: "ACTIF",
+        },
+      });
+      return { id: created.id_affectation_professeur.toString(), replaced: true };
+    });
   }
 
   async createCourseAssignment(
@@ -1030,15 +1119,8 @@ export class AcademicService {
             ponderation: dto.weight,
           },
         });
-        const assignment = await prisma.affectations_professeurs.upsert({
-          where: {
-            id_cours_classe_id_annee_scolaire: {
-              id_cours_classe: courseClass.id_cours_classe,
-              id_annee_scolaire: schoolYear!.id_annee_scolaire,
-            },
-          },
-          update: { id_professeur, statut: "ACTIF" },
-          create: {
+        const assignment = await prisma.affectations_professeurs.create({
+          data: {
             id_professeur,
             id_cours_classe: courseClass.id_cours_classe,
             id_annee_scolaire: schoolYear!.id_annee_scolaire,

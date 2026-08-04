@@ -67,13 +67,15 @@ model affectations_professeurs {
   id_cours_classe           BigInt
   id_annee_scolaire         BigInt
   date_affectation          DateTime         @default(dbgenerated("CURRENT_DATE")) @db.Date
+  date_fin                  DateTime?        @db.Date
+  motif_remplacement        String?          @db.VarChar(500)
   statut                    statut_general   @default(ACTIF)
   date_creation             DateTime         @default(now()) @db.Timestamptz(6)
   cours_classes             cours_classes    @relation(fields: [id_cours_classe], references: [id_cours_classe], onUpdate: NoAction, map: "fk_affectation_cours_classe")
   professeurs               professeurs      @relation(fields: [id_professeur], references: [id_professeur], onUpdate: NoAction, map: "fk_affectation_professeur")
   annees_scolaires          annees_scolaires @relation(fields: [id_annee_scolaire], references: [id_annee_scolaire], onUpdate: NoAction, map: "fk_affectation_professeur_annee")
 
-  @@unique([id_cours_classe, id_annee_scolaire], map: "uq_professeur_cours_classe_annee")
+  @@index([id_cours_classe, id_annee_scolaire], map: "idx_professeur_cours_classe_annee")
   @@index([id_professeur], map: "idx_affectations_professeur")
 }
 
