@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   BookOutlined,
   CheckCircleOutlined,
-  ReloadOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Empty, Skeleton, message } from "antd";
@@ -73,40 +72,27 @@ const TeacherDashboard = () => {
       label: "Élèves dans ma classe",
       value: data.stats.students,
       icon: <TeamOutlined />,
+      tone: "blue",
     },
     {
       label: "Cours de la classe",
       value: data.stats.courses,
       icon: <BookOutlined />,
+      tone: "violet",
     },
     {
       label: "Notes enregistrées",
       value: data.stats.gradesEntered,
       icon: <CheckCircleOutlined />,
+      tone: "green",
     },
   ];
 
   return (
     <section className="homeroom-dashboard">
-      <header className="homeroom-dashboard__hero">
-        <div>
-          <span>Espace titulaire · {data.schoolYear}</span>
-          <h1>Bienvenue, {data.titular.name}</h1>
-          <p>
-            Vous êtes titulaire de la classe <strong>{data.class.name}</strong>
-            {data.openPeriod
-              ? ` · Période ouverte : ${data.openPeriod}`
-              : " · Aucune période n’est ouverte actuellement"}
-          </p>
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={loadDashboard}>
-          Actualiser
-        </Button>
-      </header>
-
       <div className="homeroom-dashboard__stats">
         {statCards.map((item) => (
-          <Card key={item.label}>
+          <Card key={item.label} className={`homeroom-dashboard__stat homeroom-dashboard__stat--${item.tone}`}>
             <span className="homeroom-dashboard__stat-icon">{item.icon}</span>
             <div>
               <strong>{item.value}</strong>
@@ -116,7 +102,10 @@ const TeacherDashboard = () => {
         ))}
       </div>
 
-      <GradesPage />
+      <GradesPage
+        titularName={data.titular.name}
+        schoolLogo={data.school.logo}
+      />
     </section>
   );
 };

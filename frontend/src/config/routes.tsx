@@ -14,6 +14,8 @@ import SchoolsPage from "../features/schools/pages/SchoolsPage";
 import GradesPage from "../features/grades/pages/GradesPage";
 import StudentsPage from "../features/students/pages/StudentsPage";
 import AcademicDirectoryPage from "../features/management/pages/AcademicDirectoryPage";
+import SchoolYearsPage from "../features/management/pages/SchoolYearsPage";
+import DeletionRequestsPage from "../features/management/pages/DeletionRequestsPage";
 import { useAuth } from "../hooks/useAuth";
 
 // Placeholder pages - will be replaced with actual feature pages
@@ -169,10 +171,26 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: ROUTES.SCHOOL_YEARS,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <SchoolYearsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: ROUTES.COURSE_ASSIGNMENTS,
     element: (
       <ProtectedRoute allowedRoles={["director"]}>
         <AcademicDirectoryPage kind="assignments" />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.DELETION_REQUESTS,
+    element: (
+      <ProtectedRoute allowedRoles={["super_admin"]}>
+        <DeletionRequestsPage />
       </ProtectedRoute>
     ),
   },

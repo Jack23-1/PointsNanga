@@ -21,6 +21,7 @@ import {
   UpdateCourseDto,
   UpdateOptionDto,
   UpdateSchoolDto,
+  UpdateSchoolYearDto,
   UpdateStudentDto,
   UpdateTeacherDto,
 } from "./dto/academic.dto";
@@ -36,6 +37,14 @@ const capitalizeFirstName = (value: string) => {
 };
 const statusFromBoolean = (isActive?: boolean) =>
   isActive === false ? "INACTIF" : "ACTIF";
+const ACADEMIC_PERIODS = [
+  "1ère période",
+  "2ème période",
+  "1er semestre",
+  "3ème période",
+  "4ème période",
+  "2ème semestre",
+] as const;
 const SCHOOL_CODE_CHARACTERS = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const generateSchoolCode = () =>
   `PG${Array.from(
@@ -267,36 +276,43 @@ export class AcademicService {
     };
   }
 
-  async getHomeroomGradebook(homeroomId: string) {
+  async getHomeroomGradebook(homeroomId: string, selectedPeriodId?: string) {
     const id_titulaire = toBigInt(homeroomId);
     const homeroom = await this.prisma.titulaires.findFirst({
       where: { id_titulaire, statut_compte: "ACTIF" },
       include: { classes: true, annees_scolaires: true },
     });
     if (!homeroom) throw new NotFoundException("Compte titulaire introuvable.");
-    let period = await this.prisma.periodes.findFirst({
+    await this.prisma.$transaction(
+      ACADEMIC_PERIODS.map((label, index) =>
+        this.prisma.periodes.upsert({
+          where: {
+            id_annee_scolaire_numero: {
+              id_annee_scolaire: homeroom.id_annee_scolaire,
+              numero: index + 1,
+            },
+          },
+          update: { libelle: label },
+          create: {
+            id_annee_scolaire: homeroom.id_annee_scolaire,
+            libelle: label,
+            numero: index + 1,
+            est_ouverte: index === 0,
+          },
+        }),
+      ),
+    );
+    const periods = await this.prisma.periodes.findMany({
       where: {
         id_annee_scolaire: homeroom.id_annee_scolaire,
-        est_ouverte: true,
         statut: "ACTIF",
       },
       orderBy: { numero: "asc" },
     });
-    if (!period) {
-      const periodCount = await this.prisma.periodes.count({
-        where: { id_annee_scolaire: homeroom.id_annee_scolaire },
-      });
-      if (periodCount === 0) {
-        period = await this.prisma.periodes.create({
-          data: {
-            id_annee_scolaire: homeroom.id_annee_scolaire,
-            libelle: "Période 1",
-            numero: 1,
-            est_ouverte: true,
-          },
-        });
-      }
-    }
+    const period = selectedPeriodId
+      ? periods.find((item) => item.id_periode === toBigInt(selectedPeriodId))
+      : periods.find((item) => item.est_ouverte) ?? periods[0];
+    if (!period) throw new NotFoundException("Période scolaire introuvable.");
     const [students, courses, grades] = await Promise.all([
       this.prisma.inscriptions.findMany({
         where: {
@@ -314,11 +330,20 @@ export class AcademicService {
           id_annee_scolaire: homeroom.id_annee_scolaire,
           statut: "ACTIF",
         },
-        include: { cours: true },
+        include: {
+          cours: true,
+          affectations_professeurs: {
+            where: {
+              id_annee_scolaire: homeroom.id_annee_scolaire,
+              statut: "ACTIF",
+            },
+            include: { professeurs: true },
+            take: 1,
+          },
+        },
         orderBy: { cours: { libelle: "asc" } },
       }),
-      period
-        ? this.prisma.cotes.findMany({
+      this.prisma.cotes.findMany({
             where: {
               id_titulaire,
               id_periode: period.id_periode,
@@ -327,15 +352,22 @@ export class AcademicService {
                 id_annee_scolaire: homeroom.id_annee_scolaire,
               },
             },
-          })
-        : Promise.resolve([]),
+          }),
     ]);
     return {
       className: homeroom.classes.libelle,
       schoolYear: homeroom.annees_scolaires.libelle,
-      period: period
-        ? { id: period.id_periode.toString(), name: period.libelle }
-        : null,
+      period: {
+        id: period.id_periode.toString(),
+        name: period.libelle,
+        isOpen: period.est_ouverte,
+      },
+      periods: periods.map((item) => ({
+        id: item.id_periode.toString(),
+        name: item.libelle,
+        number: item.numero,
+        isOpen: item.est_ouverte,
+      })),
       students: students.map((item) => ({
         id: item.id_inscription.toString(),
         matricule: item.eleves.matricule,
@@ -347,6 +379,13 @@ export class AcademicService {
         id: item.id_cours_classe.toString(),
         name: item.cours.libelle,
         weight: Number(item.ponderation),
+        teacherName: item.affectations_professeurs[0]
+          ? `${item.affectations_professeurs[0].professeurs.nom}${
+              item.affectations_professeurs[0].professeurs.postnom
+                ? ` ${item.affectations_professeurs[0].professeurs.postnom}`
+                : ""
+            } ${item.affectations_professeurs[0].professeurs.prenom}`
+          : null,
       })),
       grades: grades.map((item) => ({
         enrollmentId: item.id_inscription.toString(),
@@ -368,6 +407,7 @@ export class AcademicService {
     const period = await this.prisma.periodes.findFirst({
       where: {
         id_annee_scolaire: homeroom.id_annee_scolaire,
+        ...(dto.periodId ? { id_periode: toBigInt(dto.periodId) } : {}),
         est_ouverte: true,
         statut: "ACTIF",
       },
@@ -713,13 +753,35 @@ export class AcademicService {
     }
   }
 
-  async deleteClass(id: string) {
-    try {
-      await this.prisma.classes.delete({ where: { id_classe: toBigInt(id) } });
-      return { deleted: true };
-    } catch (error) {
-      handlePrismaError(error);
+  async deleteClass(id: string, schoolId: string, requesterId: string) {
+    const id_classe = toBigInt(id);
+    const schoolClass = await this.prisma.classes.findFirst({
+      where: { id_classe, id_ecole: toBigInt(schoolId) },
+      include: {
+        _count: { select: { inscriptions: true, cours_classes: true, titulaires: true } },
+      },
+    });
+    if (!schoolClass) throw new NotFoundException("Classe introuvable.");
+
+    const summary = {
+      inscriptions: schoolClass._count.inscriptions,
+      cours: schoolClass._count.cours_classes,
+      titulaires: schoolClass._count.titulaires,
+    };
+    if (Object.values(summary).some((count) => count > 0)) {
+      const request = await this.createDeletionRequest(
+        "CLASS",
+        id,
+        schoolClass.libelle,
+        schoolId,
+        requesterId,
+        summary,
+      );
+      return { deleted: false, requested: true, requestId: request.id };
     }
+
+    await this.prisma.classes.delete({ where: { id_classe } });
+    return { deleted: true, requested: false };
   }
 
   async listTeachers(schoolId?: string) {
@@ -946,27 +1008,6 @@ export class AcademicService {
       );
     }
 
-    const teacherAssignments =
-      await this.prisma.affectations_professeurs.findMany({
-        where: {
-          id_professeur,
-          id_annee_scolaire: schoolYear.id_annee_scolaire,
-          statut: "ACTIF",
-        },
-        select: {
-          cours_classes: { select: { id_classe: true } },
-        },
-      });
-    const teacherClassIds = new Set(
-      teacherAssignments.map((item) =>
-        item.cours_classes.id_classe.toString(),
-      ),
-    );
-    if (!teacherClassIds.has(id_classe.toString()) && teacherClassIds.size >= 2) {
-      throw new BadRequestException(
-        "Ce professeur enseigne déjà dans deux classes différentes.",
-      );
-    }
     try {
       return await this.prisma.$transaction(async (prisma) => {
         const courseClass = await prisma.cours_classes.upsert({
@@ -1065,23 +1106,6 @@ export class AcademicService {
     if (duplicate?.affectations_professeurs.length) {
       throw new ConflictException(
         "Ce cours possède déjà un professeur dans cette classe.",
-      );
-    }
-    const otherAssignments = await this.prisma.affectations_professeurs.findMany({
-      where: {
-        id_professeur,
-        id_annee_scolaire: current.id_annee_scolaire,
-        statut: "ACTIF",
-        id_affectation_professeur: { not: id_affectation_professeur },
-      },
-      select: { cours_classes: { select: { id_classe: true } } },
-    });
-    const classIds = new Set(
-      otherAssignments.map((item) => item.cours_classes.id_classe.toString()),
-    );
-    if (!classIds.has(id_classe.toString()) && classIds.size >= 2) {
-      throw new BadRequestException(
-        "Ce professeur enseigne déjà dans deux classes différentes.",
       );
     }
     return this.prisma.$transaction(async (prisma) => {
@@ -1266,7 +1290,7 @@ export class AcademicService {
     return { id: updated.id_titulaire.toString() };
   }
 
-  async resetHomeroomPassword(id: string, schoolId: string) {
+  async resetHomeroomPassword(id: string, schoolId: string, password: string) {
     const id_titulaire = toBigInt(id);
     const assignment = await this.prisma.titulaires.findFirst({
       where: {
@@ -1278,19 +1302,15 @@ export class AcademicService {
     if (!assignment) {
       throw new NotFoundException("Affectation titulaire introuvable.");
     }
-    const temporaryPassword = generateHomeroomPassword();
     await this.prisma.titulaires.update({
       where: { id_titulaire },
       data: {
-        mot_de_passe_hash: await bcrypt.hash(temporaryPassword, 12),
-        doit_changer_mot_de_passe: true,
+        mot_de_passe_hash: await bcrypt.hash(password, 12),
+        doit_changer_mot_de_passe: false,
         date_mise_a_jour: new Date(),
       },
     });
-    return {
-      loginCode: assignment.code_connexion,
-      temporaryPassword,
-    };
+    return { updated: true, loginCode: assignment.code_connexion };
   }
 
   async listStudents(schoolId?: string) {
@@ -1346,29 +1366,21 @@ export class AcademicService {
       );
     }
 
-    let activeSchoolYear = await this.prisma.annees_scolaires.findFirst({
-      where: { id_ecole, est_active: true },
-      orderBy: { date_debut: "desc" },
+    if (!dto.schoolYearId) {
+      throw new BadRequestException("L’année scolaire en cours est obligatoire.");
+    }
+    const activeSchoolYear = await this.prisma.annees_scolaires.findFirst({
+      where: {
+        id_annee_scolaire: toBigInt(dto.schoolYearId),
+        id_ecole,
+        est_active: true,
+        statut: "EN_COURS",
+      },
     });
     if (!activeSchoolYear) {
-      const today = new Date();
-      const startYear =
-        today.getUTCMonth() >= 8
-          ? today.getUTCFullYear()
-          : today.getUTCFullYear() - 1;
-      const label = `${startYear}-${startYear + 1}`;
-      activeSchoolYear = await this.prisma.annees_scolaires.upsert({
-        where: { id_ecole_libelle: { id_ecole, libelle: label } },
-        update: { est_active: true, statut: "EN_COURS" },
-        create: {
-          id_ecole,
-          libelle: label,
-          date_debut: new Date(Date.UTC(startYear, 8, 1)),
-          date_fin: new Date(Date.UTC(startYear + 1, 7, 31)),
-          est_active: true,
-          statut: "EN_COURS",
-        },
-      });
+      throw new BadRequestException(
+        "Sélectionnez l’année scolaire actuellement active.",
+      );
     }
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -1523,21 +1535,361 @@ export class AcademicService {
     }
   }
 
-  async createSchoolYear(dto: CreateSchoolYearDto) {
-    try {
-      return await this.prisma.annees_scolaires.create({
-        data: {
-          id_ecole: toBigInt(dto.schoolId),
-          libelle: dto.label.trim(),
-          date_debut: new Date(dto.startDate),
-          date_fin: new Date(dto.endDate),
-          est_active: dto.isActive ?? false,
-          statut: dto.isActive ? "EN_COURS" : "PLANIFIEE",
+  async listSchoolYears(schoolId: string) {
+    const years = await this.prisma.annees_scolaires.findMany({
+      where: { id_ecole: toBigInt(schoolId) },
+      include: {
+        periodes: { orderBy: { numero: "asc" } },
+        _count: {
+          select: {
+            inscriptions: true,
+            cours_classes: true,
+            titulaires: true,
+            periodes: true,
+          },
         },
+      },
+      orderBy: { date_debut: "desc" },
+    });
+    return years.map((year) => ({
+      id: year.id_annee_scolaire.toString(),
+      label: year.libelle,
+      startDate: year.date_debut.toISOString(),
+      endDate: year.date_fin.toISOString(),
+      isActive: year.est_active,
+      status: year.statut,
+      students: year._count.inscriptions,
+      courses: year._count.cours_classes,
+      homerooms: year._count.titulaires,
+      periods: year._count.periodes,
+      periodItems: year.periodes.map((period) => ({
+        id: period.id_periode.toString(),
+        name: period.libelle,
+        number: period.numero,
+        isOpen: period.est_ouverte,
+      })),
+    }));
+  }
+
+  async createSchoolYear(dto: CreateSchoolYearDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (endDate < startDate) {
+      throw new BadRequestException("La date de fin doit suivre la date de début.");
+    }
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        if (dto.isActive) {
+          await prisma.periodes.updateMany({
+            where: {
+              annees_scolaires: { id_ecole, est_active: true },
+            },
+            data: { est_ouverte: false },
+          });
+          await prisma.annees_scolaires.updateMany({
+            where: { id_ecole, est_active: true },
+            data: { est_active: false, statut: "CLOTUREE" },
+          });
+        }
+        const year = await prisma.annees_scolaires.create({
+          data: {
+            id_ecole,
+            libelle: dto.label.trim(),
+            date_debut: startDate,
+            date_fin: endDate,
+            est_active: dto.isActive ?? false,
+            statut: dto.isActive ? "EN_COURS" : "PLANIFIEE",
+          },
+        });
+        await Promise.all(
+          ACADEMIC_PERIODS.map((label, index) =>
+            prisma.periodes.create({
+              data: {
+                id_annee_scolaire: year.id_annee_scolaire,
+                libelle: label,
+                numero: index + 1,
+                est_ouverte: Boolean(dto.isActive && index === 0),
+              },
+            }),
+          ),
+        );
+        return { id: year.id_annee_scolaire.toString() };
       });
     } catch (error) {
       handlePrismaError(error);
     }
+  }
+
+  async activateSchoolYear(id: string, schoolId: string) {
+    const id_annee_scolaire = toBigInt(id);
+    const id_ecole = toBigInt(schoolId);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: { id_annee_scolaire, id_ecole },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    await this.prisma.$transaction([
+      this.prisma.periodes.updateMany({
+        where: {
+          annees_scolaires: {
+            id_ecole,
+            est_active: true,
+            NOT: { id_annee_scolaire },
+          },
+        },
+        data: { est_ouverte: false },
+      }),
+      this.prisma.annees_scolaires.updateMany({
+        where: { id_ecole, est_active: true, NOT: { id_annee_scolaire } },
+        data: { est_active: false, statut: "CLOTUREE" },
+      }),
+      this.prisma.annees_scolaires.update({
+        where: { id_annee_scolaire },
+        data: { est_active: true, statut: "EN_COURS", date_mise_a_jour: new Date() },
+      }),
+      this.prisma.periodes.updateMany({
+        where: { id_annee_scolaire },
+        data: { est_ouverte: false },
+      }),
+      this.prisma.periodes.updateMany({
+        where: { id_annee_scolaire, numero: 1 },
+        data: { est_ouverte: true },
+      }),
+    ]);
+    return { activated: true };
+  }
+
+  async closeSchoolYear(id: string, schoolId: string) {
+    const id_annee_scolaire = toBigInt(id);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    await this.prisma.$transaction([
+      this.prisma.annees_scolaires.update({
+        where: { id_annee_scolaire },
+        data: { est_active: false, statut: "CLOTUREE", date_mise_a_jour: new Date() },
+      }),
+      this.prisma.periodes.updateMany({
+        where: { id_annee_scolaire },
+        data: { est_ouverte: false },
+      }),
+    ]);
+    return { closed: true };
+  }
+
+  async updateSchoolYear(id: string, schoolId: string, dto: UpdateSchoolYearDto) {
+    const id_annee_scolaire = toBigInt(id);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    if (endDate < startDate) {
+      throw new BadRequestException("La date de fin doit suivre la date de début.");
+    }
+    try {
+      await this.prisma.annees_scolaires.update({
+        where: { id_annee_scolaire },
+        data: {
+          libelle: dto.label.trim(),
+          date_debut: startDate,
+          date_fin: endDate,
+          date_mise_a_jour: new Date(),
+        },
+      });
+      return { updated: true };
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  async deleteSchoolYear(id: string, schoolId: string, requesterId: string) {
+    const id_annee_scolaire = toBigInt(id);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
+      include: {
+        _count: {
+          select: {
+            inscriptions: true,
+            cours_classes: true,
+            titulaires: true,
+            affectations_professeurs: true,
+            affectations_directeurs: true,
+          },
+        },
+      },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.est_active) {
+      throw new BadRequestException("L’année active ne peut pas être supprimée.");
+    }
+    const summary = {
+      inscriptions: year._count.inscriptions,
+      cours: year._count.cours_classes,
+      titulaires: year._count.titulaires,
+      affectations: year._count.affectations_professeurs,
+      directions: year._count.affectations_directeurs,
+    };
+    if (Object.values(summary).some((count) => count > 0)) {
+      const request = await this.createDeletionRequest(
+        "SCHOOL_YEAR",
+        id,
+        year.libelle,
+        schoolId,
+        requesterId,
+        summary,
+      );
+      return { deleted: false, requested: true, requestId: request.id };
+    }
+    await this.prisma.$transaction([
+      this.prisma.periodes.deleteMany({ where: { id_annee_scolaire } }),
+      this.prisma.annees_scolaires.delete({ where: { id_annee_scolaire } }),
+    ]);
+    return { deleted: true, requested: false };
+  }
+
+  private async createDeletionRequest(
+    entityType: "CLASS" | "SCHOOL_YEAR",
+    entityId: string,
+    entityLabel: string,
+    schoolId: string,
+    requesterId: string,
+    dataSummary: Record<string, number>,
+  ) {
+    const existing = await this.prisma.deletionRequest.findFirst({
+      where: { entityType, entityId, status: "PENDING" },
+    });
+    if (existing) return existing;
+    return this.prisma.deletionRequest.create({
+      data: {
+        entityType,
+        entityId,
+        entityLabel,
+        schoolId,
+        requestedBy: requesterId,
+        dataSummary,
+      },
+    });
+  }
+
+  async listDeletionRequests() {
+    const requests = await this.prisma.deletionRequest.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    const schoolIds = [...new Set(requests.map((request) => request.schoolId))];
+    const schools = await this.prisma.ecoles.findMany({
+      where: { id_ecole: { in: schoolIds.map(toBigInt) } },
+      select: { id_ecole: true, nom_ecole: true },
+    });
+    const schoolNames = new Map(schools.map((school) => [school.id_ecole.toString(), school.nom_ecole]));
+    return requests.map((request) => ({
+      ...request,
+      schoolName: schoolNames.get(request.schoolId) ?? "École inconnue",
+    }));
+  }
+
+  async reviewDeletionRequest(
+    id: string,
+    reviewerId: string,
+    approved: boolean,
+    comment?: string,
+  ) {
+    const request = await this.prisma.deletionRequest.findUnique({ where: { id } });
+    if (!request) throw new NotFoundException("Demande de suppression introuvable.");
+    if (request.status !== "PENDING") {
+      throw new BadRequestException("Cette demande a déjà été traitée.");
+    }
+
+    if (!approved) {
+      await this.prisma.deletionRequest.update({
+        where: { id },
+        data: {
+          status: "REJECTED",
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+          reviewComment: clean(comment),
+        },
+      });
+      return { rejected: true };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (request.entityType === "CLASS") {
+        const classId = toBigInt(request.entityId);
+        const exists = await tx.classes.findUnique({ where: { id_classe: classId } });
+        if (exists) {
+          await tx.cotes.deleteMany({
+            where: { OR: [{ inscriptions: { id_classe: classId } }, { cours_classes: { id_classe: classId } }] },
+          });
+          await tx.resultats.deleteMany({ where: { inscriptions: { id_classe: classId } } });
+          await tx.affectations_professeurs.deleteMany({ where: { cours_classes: { id_classe: classId } } });
+          await tx.titulaires.deleteMany({ where: { id_classe: classId } });
+          await tx.cours_classes.deleteMany({ where: { id_classe: classId } });
+          await tx.inscriptions.deleteMany({ where: { id_classe: classId } });
+          await tx.classes.delete({ where: { id_classe: classId } });
+        }
+      } else if (request.entityType === "SCHOOL_YEAR") {
+        const yearId = toBigInt(request.entityId);
+        const exists = await tx.annees_scolaires.findUnique({ where: { id_annee_scolaire: yearId } });
+        if (exists) {
+          await tx.cotes.deleteMany({ where: { periodes: { id_annee_scolaire: yearId } } });
+          await tx.resultats.deleteMany({ where: { periodes: { id_annee_scolaire: yearId } } });
+          await tx.affectations_professeurs.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.affectations_directeurs.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.titulaires.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.cours_classes.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.inscriptions.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.periodes.deleteMany({ where: { id_annee_scolaire: yearId } });
+          await tx.annees_scolaires.delete({ where: { id_annee_scolaire: yearId } });
+        }
+      } else {
+        throw new BadRequestException("Type de suppression non pris en charge.");
+      }
+
+      await tx.deletionRequest.update({
+        where: { id },
+        data: {
+          status: "APPROVED",
+          reviewedBy: reviewerId,
+          reviewedAt: new Date(),
+          reviewComment: clean(comment),
+        },
+      });
+    });
+    return { approved: true, deleted: true };
+  }
+
+  async toggleSchoolPeriod(
+    yearId: string,
+    periodId: string,
+    schoolId: string,
+    isOpen: boolean,
+  ) {
+    const id_annee_scolaire = toBigInt(yearId);
+    const id_periode = toBigInt(periodId);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: {
+        id_annee_scolaire,
+        id_ecole: toBigInt(schoolId),
+      },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    const period = await this.prisma.periodes.findFirst({
+      where: { id_periode, id_annee_scolaire, statut: "ACTIF" },
+    });
+    if (!period) throw new NotFoundException("Période scolaire introuvable.");
+    if (isOpen && !year.est_active) {
+      throw new BadRequestException(
+        "Activez d’abord cette année scolaire avant d’ouvrir une période.",
+      );
+    }
+    await this.prisma.periodes.update({
+      where: { id_periode },
+      data: { est_ouverte: isOpen, date_mise_a_jour: new Date() },
+    });
+    return { updated: true };
   }
 
   async assignStudent(dto: AssignStudentDto) {

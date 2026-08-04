@@ -18,8 +18,12 @@ import {
   UpdateClassDto,
   UpdateCourseDto,
   UpdateOptionDto,
+  UpdateSchoolYearDto,
   UpdateStudentDto,
   UpdateTeacherDto,
+  ToggleSchoolPeriodDto,
+  ReviewDeletionRequestDto,
+  ResetHomeroomPasswordDto,
 } from "./dto/academic.dto";
 
 @Controller()
@@ -54,9 +58,15 @@ export class AcademicController {
 
   @Get("grades/homeroom")
   @Roles("teacher")
-  homeroomGradebook(@Req() request: { user?: { sub?: string | number } }) {
+  homeroomGradebook(
+    @Req() request: { user?: { sub?: string | number } },
+    @Query("periodId") periodId?: string,
+  ) {
     if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
-    return this.academicService.getHomeroomGradebook(String(request.user.sub));
+    return this.academicService.getHomeroomGradebook(
+      String(request.user.sub),
+      periodId,
+    );
   }
 
   @Patch("grades/homeroom")
@@ -134,8 +144,18 @@ export class AcademicController {
   }
 
   @Delete("classes/:id")
-  deleteClass(@Param("id") id: string) {
-    return this.academicService.deleteClass(id);
+  deleteClass(
+    @Req() request: { user?: { sub?: string | number; schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId || !request.user.sub) {
+      throw new ForbiddenException("Session directeur invalide.");
+    }
+    return this.academicService.deleteClass(
+      id,
+      String(request.user.schoolId),
+      String(request.user.sub),
+    );
   }
 
   @Get("teachers")
@@ -257,9 +277,10 @@ export class AcademicController {
   resetHomeroomPassword(
     @Req() request: { user?: { schoolId?: string | number } },
     @Param("id") id: string,
+    @Body() dto: ResetHomeroomPasswordDto,
   ) {
     if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
-    return this.academicService.resetHomeroomPassword(id, String(request.user.schoolId));
+    return this.academicService.resetHomeroomPassword(id, String(request.user.schoolId), dto.password);
   }
 
   @Get("students")
@@ -327,9 +348,112 @@ export class AcademicController {
     );
   }
 
+  @Get("school-years")
+  listSchoolYears(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Query("schoolId") schoolId?: string,
+  ) {
+    const resolvedSchoolId =
+      request.user?.role === "director" ? request.user.schoolId : schoolId;
+    if (!resolvedSchoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listSchoolYears(String(resolvedSchoolId));
+  }
+
   @Post("school-years")
-  createSchoolYear(@Body() dto: CreateSchoolYearDto) {
-    return this.academicService.createSchoolYear(dto);
+  createSchoolYear(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateSchoolYearDto,
+  ) {
+    const resolvedSchoolId =
+      request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
+    if (!resolvedSchoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createSchoolYear(dto, String(resolvedSchoolId));
+  }
+
+  @Patch("school-years/:id/activate")
+  activateSchoolYear(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.activateSchoolYear(id, String(request.user.schoolId));
+  }
+
+  @Patch("school-years/:id/close")
+  closeSchoolYear(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.closeSchoolYear(id, String(request.user.schoolId));
+  }
+
+  @Patch("school-years/:id")
+  updateSchoolYear(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: UpdateSchoolYearDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateSchoolYear(id, String(request.user.schoolId), dto);
+  }
+
+  @Patch("school-years/:yearId/periods/:periodId")
+  toggleSchoolPeriod(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("yearId") yearId: string,
+    @Param("periodId") periodId: string,
+    @Body() dto: ToggleSchoolPeriodDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.toggleSchoolPeriod(
+      yearId,
+      periodId,
+      String(request.user.schoolId),
+      dto.isOpen,
+    );
+  }
+
+  @Delete("school-years/:id")
+  deleteSchoolYear(
+    @Req() request: { user?: { sub?: string | number; schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    if (!request.user.sub) throw new ForbiddenException("Session directeur invalide.");
+    return this.academicService.deleteSchoolYear(
+      id,
+      String(request.user.schoolId),
+      String(request.user.sub),
+    );
+  }
+
+  @Get("deletion-requests")
+  @Roles("super_admin")
+  listDeletionRequests() {
+    return this.academicService.listDeletionRequests();
+  }
+
+  @Patch("deletion-requests/:id/approve")
+  @Roles("super_admin")
+  approveDeletionRequest(
+    @Req() request: { user?: { sub?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: ReviewDeletionRequestDto,
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session invalide.");
+    return this.academicService.reviewDeletionRequest(id, String(request.user.sub), true, dto.comment);
+  }
+
+  @Patch("deletion-requests/:id/reject")
+  @Roles("super_admin")
+  rejectDeletionRequest(
+    @Req() request: { user?: { sub?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: ReviewDeletionRequestDto,
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session invalide.");
+    return this.academicService.reviewDeletionRequest(id, String(request.user.sub), false, dto.comment);
   }
 
   @Post("enrollments")

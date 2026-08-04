@@ -12,6 +12,7 @@ import {
   TeamOutlined,
   ReadOutlined,
   LogoutOutlined,
+  CalendarOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
 import { ROUTES } from "../../config/constants";
@@ -148,10 +149,34 @@ const Sidebar: React.FC = () => {
           onClick: () => handleNavigation(ROUTES.HOMEROOM_TEACHERS),
         },
         {
+          key: ROUTES.SCHOOL_YEARS,
+          icon: <CalendarOutlined />,
+          label: "Années scolaires",
+          onClick: () => handleNavigation(ROUTES.SCHOOL_YEARS),
+        },
+        {
           key: ROUTES.COURSE_ASSIGNMENTS,
           icon: <BookOutlined />,
           label: "Attributions cours",
           onClick: () => handleNavigation(ROUTES.COURSE_ASSIGNMENTS),
+        },
+        {
+          key: "logout",
+          icon: <LogoutOutlined />,
+          label: "Déconnexion",
+          onClick: handleLogout,
+          danger: true,
+        },
+      ];
+    }
+
+    if (user?.role === "teacher") {
+      return [
+        {
+          key: ROUTES.DASHBOARD,
+          icon: <BookOutlined />,
+          label: "Notes",
+          onClick: () => handleNavigation(ROUTES.DASHBOARD),
         },
         {
           key: "logout",
@@ -198,23 +223,6 @@ const Sidebar: React.FC = () => {
         label: "Écoles",
         onClick: () => handleNavigation(ROUTES.SCHOOLS),
       });
-    }
-
-    if (user?.role === "teacher" && !isAdministrationArea) {
-      items.push(
-        {
-          key: "grades",
-          icon: <BookOutlined />,
-          label: "Notes",
-          onClick: () => handleNavigation(ROUTES.GRADES),
-        },
-        {
-          key: "teacher-results",
-          icon: <FileTextOutlined />,
-          label: "Résultats",
-          onClick: () => handleNavigation(ROUTES.RESULTS),
-        },
-      );
     }
 
     if (user?.role === "student" && !isAdministrationArea) {

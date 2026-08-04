@@ -11,6 +11,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -142,6 +143,11 @@ export class CreateStudentDto {
   @Min(1)
   schoolId?: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  schoolYearId?: number;
+
   @IsInt()
   @Min(1)
   classId: number;
@@ -231,6 +237,13 @@ export class CreateHomeroomAssignmentDto {
   teacherId: number;
 }
 
+export class ResetHomeroomPasswordDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password: string;
+}
+
 export class HomeroomGradeDto {
   @IsInt()
   @Min(1)
@@ -246,6 +259,11 @@ export class HomeroomGradeDto {
 }
 
 export class SaveHomeroomGradesDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  periodId?: number;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => HomeroomGradeDto)
@@ -271,6 +289,31 @@ export class CreateSchoolYearDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpdateSchoolYearDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  label: string;
+
+  @IsDateString()
+  startDate: string;
+
+  @IsDateString()
+  endDate: string;
+}
+
+export class ToggleSchoolPeriodDto {
+  @IsBoolean()
+  isOpen: boolean;
+}
+
+export class ReviewDeletionRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
 }
 
 export class AssignStudentDto {

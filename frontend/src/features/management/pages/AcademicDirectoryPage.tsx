@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOutlined,
+  DeleteOutlined,
   EditOutlined,
   PhoneOutlined,
   PlusOutlined,
@@ -61,6 +62,11 @@ interface FormValues {
   weight?: number;
 }
 
+interface ResetPasswordValues {
+  password: string;
+  confirmation: string;
+}
+
 interface Choice {
   id: string;
   label: string;
@@ -118,7 +124,7 @@ const contentByKind = {
   assignments: {
     title: "Attributions des cours",
     description:
-      "Associez chaque cours à une classe, un professeur et une pondération.",
+      "Réutilisez un même cours dans plusieurs classes avec une pondération propre à chacune.",
     icon: <BookOutlined />,
     addLabel: "Nouvelle attribution",
     search: "Rechercher un cours, une classe ou un professeur...",
@@ -138,6 +144,7 @@ const errorMessage = (error: unknown, fallback: string) => {
 const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const content = contentByKind[kind];
   const [form] = Form.useForm<FormValues>();
+  const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
   const [rows, setRows] = useState<DirectoryRow[]>([]);
   const [classes, setClasses] = useState<Choice[]>([]);
   const [courses, setCourses] = useState<Choice[]>([]);
@@ -152,7 +159,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<DirectoryRow | null>(null);
-  const selectedCourseId = Form.useWatch("courseId", form);
+  const selectedClassId = Form.useWatch("classId", form);
 
   const loadData = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -283,18 +290,18 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     );
   }, [rows, search]);
 
-  const assignmentByClass = useMemo(() => {
+  const assignmentByCourse = useMemo(() => {
     const result = new Map<string, AssignmentApiRow>();
-    if (!selectedCourseId) return result;
+    if (!selectedClassId) return result;
     assignments
       .filter(
         (item) =>
-          item.courseId === String(selectedCourseId) &&
+          item.classId === String(selectedClassId) &&
           item.id !== editingRow?.key,
       )
-      .forEach((item) => result.set(item.classId, item));
+      .forEach((item) => result.set(item.courseId, item));
     return result;
-  }, [assignments, editingRow, selectedCourseId]);
+  }, [assignments, editingRow, selectedClassId]);
 
   const occupiedHomeroomClasses = useMemo(
     () =>
@@ -438,58 +445,52 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     }
   };
 
-  const showHomeroomCredentials = (
-    loginCode: string,
-    temporaryPassword: string,
-    title: string,
-  ) => {
-    Modal.success({
-      title,
-      className: "academic-directory__credentials-modal",
-      centered: true,
-      width: 440,
-      content: (
-        <div className="academic-directory__credentials">
-          <p>
-            Communiquez ces accès au professeur. Le mot de passe ne sera plus
-            affiché ensuite.
-          </p>
-          <div>
-            <span>Code de connexion</span>
-            <strong>{loginCode}</strong>
-          </div>
-          <div>
-            <span>Mot de passe temporaire</span>
-            <strong>{temporaryPassword}</strong>
-          </div>
-        </div>
-      ),
-      okText: "J’ai noté les accès",
-    });
-  };
-
   const resetHomeroomPassword = (row: DirectoryRow) => {
+    resetPasswordForm.resetFields();
     Modal.confirm({
-      title: "Réinitialiser le mot de passe ?",
-      content:
-        `Un nouveau mot de passe temporaire sera créé pour ${row.primary}. ` +
-        "L’ancien mot de passe ne fonctionnera plus.",
-      okText: "Réinitialiser",
+      title: `Nouveau mot de passe de ${row.primary}`,
+      content: (
+        <Form form={resetPasswordForm} layout="vertical" className="academic-directory__password-form">
+          <p>Définissez le nouveau mot de passe du titulaire. L’ancien ne fonctionnera plus.</p>
+          <Form.Item
+            name="password"
+            label="Nouveau mot de passe"
+            rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}
+          >
+            <Input.Password autoComplete="new-password" placeholder="Au moins 8 caractères" />
+          </Form.Item>
+          <Form.Item
+            name="confirmation"
+            label="Confirmer le mot de passe"
+            dependencies={["password"]}
+            rules={[
+              { required: true, message: "Confirmez le mot de passe." },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  return !value || getFieldValue("password") === value
+                    ? Promise.resolve()
+                    : Promise.reject(new Error("Les mots de passe ne correspondent pas."));
+                },
+              }),
+            ]}
+          >
+            <Input.Password autoComplete="new-password" placeholder="Retapez le mot de passe" />
+          </Form.Item>
+        </Form>
+      ),
+      okText: "Enregistrer le mot de passe",
       cancelText: "Annuler",
       centered: true,
       className: "academic-directory__confirm-modal",
       async onOk() {
         try {
-          const response = await api.post<{
-            loginCode: string;
-            temporaryPassword: string;
-          }>(`/homeroom-assignments/${row.key}/reset-password`);
-          showHomeroomCredentials(
-            response.data.loginCode,
-            response.data.temporaryPassword,
-            "Nouveau mot de passe généré",
-          );
+          const values = await resetPasswordForm.validateFields();
+          await api.post(`/homeroom-assignments/${row.key}/reset-password`, {
+            password: values.password,
+          });
+          message.success("Le nouveau mot de passe du titulaire est enregistré.");
         } catch (error) {
+          if (error && typeof error === "object" && "errorFields" in error) throw error;
           message.error(
             errorMessage(error, "Réinitialisation du mot de passe impossible."),
           );
@@ -557,7 +558,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           {
             title: "Actions",
             key: "actions",
-            width: kind === "homeroom" ? 240 : 110,
+            width: kind === "homeroom" || kind === "classes" ? 240 : 110,
             align: "right" as const,
             render: (_: unknown, row: DirectoryRow) => (
               <div className="academic-directory__row-actions">
@@ -569,6 +570,39 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                 >
                   Modifier
                 </Button>
+                {kind === "classes" && (
+                  <Button
+                    danger
+                    type="text"
+                    icon={<DeleteOutlined />}
+                    onClick={() => {
+                      Modal.confirm({
+                        centered: true,
+                        title: `Supprimer ${row.primary} ?`,
+                        content: "Si cette classe contient des données, une demande sera envoyée au super administrateur.",
+                        okText: "Supprimer ou envoyer",
+                        okButtonProps: { danger: true },
+                        cancelText: "Annuler",
+                        async onOk() {
+                          try {
+                            const response = await api.delete<{ deleted: boolean; requested: boolean }>(`/classes/${row.key}`);
+                            message.success(
+                              response.data.requested
+                                ? "La classe contient des données. Demande envoyée au super administrateur."
+                                : "Classe supprimée.",
+                            );
+                            await loadData();
+                          } catch (error) {
+                            message.error(errorMessage(error, "Suppression impossible."));
+                            throw error;
+                          }
+                        },
+                      });
+                    }}
+                  >
+                    Supprimer
+                  </Button>
+                )}
                 {kind === "homeroom" && (
                   <Button
                     type="text"
@@ -827,16 +861,16 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
               <Row gutter={14}>
                 <Col span={12}>
                   <Form.Item
-                    name="courseId"
-                    label="Cours"
-                    rules={[{ required: true, message: "Choisissez le cours." }]}
+                    name="classId"
+                    label="Classe"
+                    rules={[{ required: true, message: "Choisissez la classe." }]}
                   >
                     <Select
                       showSearch
                       optionFilterProp="label"
-                      placeholder="Sélectionner un cours"
-                      onChange={() => form.setFieldValue("classId", undefined)}
-                      options={courses.map((item) => ({
+                      placeholder="Sélectionner d’abord une classe"
+                      onChange={() => form.setFieldValue("courseId", undefined)}
+                      options={classes.map((item) => ({
                         value: item.id,
                         label: item.label,
                       }))}
@@ -845,21 +879,21 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                 </Col>
                 <Col span={12}>
                   <Form.Item
-                    name="classId"
-                    label="Classe"
-                    rules={[{ required: true, message: "Choisissez la classe." }]}
+                    name="courseId"
+                    label="Cours à ajouter"
+                    rules={[{ required: true, message: "Choisissez le cours." }]}
                   >
                     <Select
                       showSearch
                       optionFilterProp="label"
-                      disabled={!selectedCourseId}
+                      disabled={!selectedClassId}
                       placeholder={
-                        selectedCourseId
-                          ? "Sélectionner une classe"
-                          : "Choisissez d’abord un cours"
+                        selectedClassId
+                          ? "Sélectionner un cours réutilisable"
+                          : "Choisissez d’abord la classe"
                       }
-                      options={classes.map((item) => {
-                        const existing = assignmentByClass.get(item.id);
+                      options={courses.map((item) => {
+                        const existing = assignmentByCourse.get(item.id);
                         return {
                           value: item.id,
                           label: item.label,
@@ -867,15 +901,13 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                         };
                       })}
                       optionRender={(option) => {
-                        const existing = assignmentByClass.get(
+                        const existing = assignmentByCourse.get(
                           String(option.value),
                         );
                         return (
                           <div className="academic-directory__assignment-option">
                             <span>{String(option.label)}</span>
-                            {existing && (
-                              <small>Déjà attribué à {existing.teacher}</small>
-                            )}
+                            {existing && <small>Déjà présent dans cette classe</small>}
                           </div>
                         );
                       }}

@@ -1,15 +1,20 @@
 import {
+  type CSSProperties,
   type ClipboardEvent,
   type KeyboardEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   BookOutlined,
+  CloudSyncOutlined,
+  LoadingOutlined,
   ReloadOutlined,
   SaveOutlined,
   UserOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import {
   Alert,
@@ -20,6 +25,7 @@ import {
   Input,
   InputNumber,
   Skeleton,
+  Tooltip,
   message,
 } from "antd";
 import axios from "axios";
@@ -37,12 +43,14 @@ interface Course {
   id: string;
   name: string;
   weight: number;
+  teacherName?: string | null;
 }
 
 interface Gradebook {
   className: string;
   schoolYear: string;
-  period: { id: string; name: string } | null;
+  period: { id: string; name: string; isOpen: boolean } | null;
+  periods: { id: string; name: string; number: number; isOpen: boolean }[];
   students: Student[];
   courses: Course[];
   grades: {
@@ -75,6 +83,26 @@ const ALLOWED_GRADE_KEYS = new Set([
   "End",
 ]);
 
+const warnInvalidGrade = (content: string) => {
+  message.warning({
+    key: "invalid-grade-value",
+    className: "gradebook__validation-message",
+    icon: <span />,
+    content: (
+      <span className="gradebook__validation-dialog">
+        <span className="gradebook__validation-icon">
+          <WarningOutlined />
+        </span>
+        <span className="gradebook__validation-copy">
+          <strong>Saisie refusée</strong>
+          <small>{content}</small>
+        </span>
+      </span>
+    ),
+    duration: 1,
+  });
+};
+
 const errorMessage = (error: unknown, fallback: string) => {
   if (!axios.isAxiosError(error)) return fallback;
   const value = error.response?.data?.message;
@@ -85,21 +113,43 @@ const errorMessage = (error: unknown, fallback: string) => {
       : fallback;
 };
 
-const GradesPage = () => {
+interface GradesPageProps {
+  titularName?: string;
+  schoolLogo?: string | null;
+}
+
+const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   const [data, setData] = useState<Gradebook | null>(null);
   const [grades, setGrades] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editVersion, setEditVersion] = useState(0);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    "saved" | "pending" | "saving"
+  >("saved");
+  const editVersionRef = useRef(0);
 
-  const loadGradebook = async () => {
+  const markGradeChanged = () => {
+    editVersionRef.current += 1;
+    setEditVersion(editVersionRef.current);
+    setAutoSaveStatus("pending");
+  };
+
+  const loadGradebook = async (periodId?: string) => {
     setLoading(true);
     try {
-      const response = await api.get<Gradebook>("/grades/homeroom");
+      const response = await api.get<Gradebook>("/grades/homeroom", {
+        refreshedAt: Date.now(),
+        ...(periodId ? { periodId } : {}),
+      });
       const courseWeights = new Map(
         response.data.courses.map((course) => [course.id, course.weight]),
       );
       setData(response.data);
+      editVersionRef.current = 0;
+      setEditVersion(0);
+      setAutoSaveStatus("saved");
       setGrades(
         Object.fromEntries(
           response.data.grades.map((grade) => {
@@ -155,6 +205,7 @@ const GradesPage = () => {
     event: KeyboardEvent<HTMLElement>,
     rowIndex: number,
     columnIndex: number,
+    weight: number,
   ) => {
     const { key, ctrlKey, metaKey } = event;
 
@@ -186,7 +237,9 @@ const GradesPage = () => {
         nextColumnIndex >= 0 &&
         nextColumnIndex < (data?.courses.length ?? 0)
       ) {
-        requestAnimationFrame(() => focusGradeCell(nextRowIndex, nextColumnIndex));
+        requestAnimationFrame(() =>
+          focusGradeCell(nextRowIndex, nextColumnIndex),
+        );
       }
 
       return;
@@ -199,11 +252,26 @@ const GradesPage = () => {
       return;
     }
 
-    if (ALLOWED_GRADE_KEYS.has(key) || /^\d$/.test(key)) {
+    if (ALLOWED_GRADE_KEYS.has(key)) {
+      return;
+    }
+
+    if (/^\d$/.test(key)) {
+      const input = event.target;
+      if (input instanceof HTMLInputElement) {
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const nextValue = `${input.value.slice(0, start)}${key}${input.value.slice(end)}`;
+        if (Number(nextValue) > weight) {
+          event.preventDefault();
+          warnInvalidGrade(`La cote maximale pour ce cours est ${weight}.`);
+        }
+      }
       return;
     }
 
     event.preventDefault();
+    warnInvalidGrade("Saisissez uniquement des chiffres.");
   };
 
   const handleGradePaste = (
@@ -215,6 +283,7 @@ const GradesPage = () => {
 
     if (!/^\d+$/.test(raw)) {
       event.preventDefault();
+      warnInvalidGrade("Le collage doit contenir uniquement des chiffres.");
       return;
     }
 
@@ -225,14 +294,21 @@ const GradesPage = () => {
       return;
     }
 
+    if (numeric > weight) {
+      warnInvalidGrade(`La cote maximale pour ce cours est ${weight}.`);
+      return;
+    }
+
+    markGradeChanged();
     setGrades((current) => ({
       ...current,
       [currentKey]: clampGradeValue(numeric, weight),
     }));
   };
 
-  const save = async () => {
-    if (!data?.period) return;
+  const save = async (automatic = false) => {
+    if (!data?.period?.isOpen) return;
+    const versionBeingSaved = editVersionRef.current;
     const courseWeights = new Map(
       data.courses.map((course) => [course.id, course.weight]),
     );
@@ -246,12 +322,23 @@ const GradesPage = () => {
       };
     });
     setSaving(true);
+    if (automatic) setAutoSaveStatus("saving");
     try {
-      await api.patch("/grades/homeroom", { grades: payload });
-      message.success(
-        `${payload.length} cote${payload.length > 1 ? "s" : ""} enregistrée${payload.length > 1 ? "s" : ""}.`,
-      );
-      await loadGradebook();
+      await api.patch("/grades/homeroom", {
+        periodId: Number(data.period.id),
+        grades: payload,
+      });
+      if (automatic) {
+        if (versionBeingSaved === editVersionRef.current) {
+          setAutoSaveStatus("saved");
+        }
+      } else {
+        message.success(
+          `${payload.length} cote${payload.length > 1 ? "s" : ""} enregistrée${payload.length > 1 ? "s" : ""}.`,
+        );
+        setAutoSaveStatus("saved");
+        await loadGradebook();
+      }
     } catch (error) {
       message.error(
         errorMessage(error, "Enregistrement des cotes impossible."),
@@ -261,6 +348,18 @@ const GradesPage = () => {
     }
   };
 
+  useEffect(() => {
+    if (editVersion === 0 || !data?.period?.isOpen) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void save(true);
+    }, 1000);
+
+    return () => window.clearTimeout(timeoutId);
+    // The edit version intentionally restarts this one-second debounce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editVersion]);
+
   if (loading && !data) {
     return <Skeleton active paragraph={{ rows: 14 }} />;
   }
@@ -269,13 +368,22 @@ const GradesPage = () => {
     return (
       <Card>
         <Empty description="Le carnet de cotes est indisponible.">
-          <Button onClick={loadGradebook}>Réessayer</Button>
+          <Button onClick={() => void loadGradebook()}>Réessayer</Button>
         </Empty>
       </Card>
     );
   }
 
   const headerRotationClass = "gradebook__sheet--rotate-90";
+  const longestCourseName = data.courses.reduce(
+    (longest, course) => Math.max(longest, course.name.length),
+    0,
+  );
+  const courseHeaderHeight = Math.max(250, longestCourseName * 9 + 65);
+  const sheetStyle = {
+    "--gradebook-header-height": `${courseHeaderHeight}px`,
+    "--gradebook-title-width": `${courseHeaderHeight - 40}px`,
+  } as CSSProperties;
 
   return (
     <section className="gradebook">
@@ -287,41 +395,86 @@ const GradesPage = () => {
           <span>Carnet de cotes · {data.schoolYear}</span>
           <h1>{data.className}</h1>
           <p>
-            {data.period
-              ? `Saisie en cours pour : ${data.period.name}`
+            {data.period?.isOpen
+              ? `Saisie ouverte pour : ${data.period.name}`
+              : data.period
+                ? `Consultation : ${data.period.name}`
               : "La saisie est suspendue jusqu’à l’ouverture d’une période."}
           </p>
+          {titularName && (
+            <div className="gradebook__titular">
+              <span>Titulaire :</span>
+              <strong>{titularName}</strong>
+            </div>
+          )}
         </div>
         <div className="gradebook__actions">
-          <Button icon={<ReloadOutlined />} onClick={loadGradebook}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => void loadGradebook(data.period?.id)}
+          >
             Actualiser
           </Button>
           <Button
             type="primary"
             icon={<SaveOutlined />}
-            disabled={!data.period}
+            disabled={!data.period?.isOpen}
             loading={saving}
-            onClick={save}
+            onClick={() => void save(false)}
           >
             Enregistrer les cotes
           </Button>
         </div>
       </header>
 
-      {!data.period && (
+      <nav className="gradebook__periods" aria-label="Périodes scolaires">
+        {data.periods.map((period) => (
+          <button
+            key={period.id}
+            type="button"
+            className={`gradebook__period-button${data.period?.id === period.id ? " is-active" : ""}${period.isOpen ? " is-open" : ""}`}
+            onClick={() => void loadGradebook(period.id)}
+          >
+            <span>{period.number}</span>
+            <strong>{period.name}</strong>
+            {period.isOpen && <small>Ouverte</small>}
+          </button>
+        ))}
+      </nav>
+
+      {!data.period?.isOpen && (
         <Alert
           showIcon
-          type="warning"
-          message="Aucune période ouverte"
-          description="Le directeur doit ouvrir une période avant que les cotes puissent être saisies."
+          type="info"
+          message={`${data.period?.name ?? "Cette période"} est en consultation`}
+          description="Les cotes de cette période sont visibles mais ne peuvent être modifiées que lorsqu’elle est ouverte."
         />
       )}
 
       <Card className="gradebook__card">
         <div className="gradebook__toolbar">
-          <div>
-            <strong>{data.students.length} élèves</strong>
-            <span>{data.courses.length} cours</span>
+          <div className="gradebook__toolbar-summary">
+            <div className="gradebook__toolbar-icon">
+              <UserOutlined />
+            </div>
+            <div>
+              <strong>Carnet de la classe</strong>
+              <span>{data.students.length} élèves · {data.courses.length} cours</span>
+            </div>
+          </div>
+          <div className={`gradebook__autosave gradebook__autosave--${autoSaveStatus}`}>
+            {autoSaveStatus === "saving" ? (
+              <LoadingOutlined spin />
+            ) : (
+              <CloudSyncOutlined />
+            )}
+            <span>
+              {autoSaveStatus === "pending"
+                ? "Modification en attente"
+                : autoSaveStatus === "saving"
+                  ? "Enregistrement…"
+                  : "Cotes enregistrées"}
+            </span>
           </div>
           <Input.Search
             allowClear
@@ -333,25 +486,76 @@ const GradesPage = () => {
         {students.length === 0 || data.courses.length === 0 ? (
           <Empty description="Aucun élève ou cours disponible." />
         ) : (
-          <div className={`gradebook__sheet ${headerRotationClass}`.trim()}>
+          <div
+            className={`gradebook__sheet ${headerRotationClass}`.trim()}
+            style={sheetStyle}
+          >
             <table>
               <thead>
                 <tr>
-                  <th className="gradebook__student-column">ÉLÈVES</th>
+                  <th className="gradebook__student-column">
+                    <div className="gradebook__corner-logo">
+                      {schoolLogo ? (
+                        <img src={schoolLogo} alt="Logo de l’école" />
+                      ) : (
+                        <BookOutlined />
+                      )}
+                      <span>Élèves</span>
+                    </div>
+                  </th>
                   {data.courses.map((course) => (
                     <th key={course.id} className="gradebook__course-column">
-                      <div className="gradebook__course-title">
-                        <strong>{`${course.name} (${course.weight})`}</strong>
-                      </div>
+                      <Tooltip
+                        placement="right"
+                        mouseEnterDelay={0.1}
+                        title={
+                          <div className="gradebook__teacher-tooltip">
+                            <small>Professeur du cours</small>
+                            <strong>
+                              {course.teacherName ?? "Aucun professeur attribué"}
+                            </strong>
+                          </div>
+                        }
+                      >
+                        <div
+                          className="gradebook__course-title"
+                          title={course.teacherName ?? "Aucun professeur attribué"}
+                        >
+                          <strong className="gradebook__course-name">
+                            {course.name}
+                          </strong>
+                        </div>
+                      </Tooltip>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
+                <tr className="gradebook__weight-row">
+                  <th className="gradebook__student-column">
+                    <div className="gradebook__weight-label">
+                      <BookOutlined />
+                      <div>
+                        <strong>Pondération</strong>
+                        <small>Maximum par cours</small>
+                      </div>
+                    </div>
+                  </th>
+                  {data.courses.map((course) => (
+                    <td key={course.id}>
+                      <span className="gradebook__weight-value">
+                        {course.weight}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
                 {students.map((student, rowIndex) => (
                   <tr key={student.id}>
                     <th className="gradebook__student-column">
                       <div className="gradebook__student">
+                        <span className="gradebook__student-number">
+                          {student.orderNumber ?? rowIndex + 1}
+                        </span>
                         <Avatar
                           src={student.photo || undefined}
                           icon={<UserOutlined />}
@@ -390,36 +594,45 @@ const GradesPage = () => {
                                 : Number(sanitized);
                             }}
                             value={value}
-                            disabled={!data.period}
+                            disabled={!data.period?.isOpen}
                             onKeyDown={(event) =>
-                              handleGradeKeyDown(event, rowIndex, columnIndex)
+                              handleGradeKeyDown(
+                                event,
+                                rowIndex,
+                                columnIndex,
+                                course.weight,
+                              )
                             }
                             onPaste={(event) =>
                               handleGradePaste(event, key, course.weight)
                             }
-                            onChange={(value) =>
-                              setGrades((current) => {
-                                if (value === null) {
+                            onChange={(value) => {
+                              if (value === null) {
+                                markGradeChanged();
+                                setGrades((current) => {
                                   const next = { ...current };
                                   delete next[key];
                                   return next;
-                                }
-                                const numericValue =
-                                  typeof value === "number"
-                                    ? value
-                                    : Number(value);
-                                if (Number.isNaN(numericValue)) {
-                                  return current;
-                                }
-                                return {
-                                  ...current,
-                                  [key]: clampGradeValue(
-                                    numericValue,
-                                    course.weight,
-                                  ),
-                                };
-                              })
-                            }
+                                });
+                                return;
+                              }
+                              const numericValue =
+                                typeof value === "number"
+                                  ? value
+                                  : Number(value);
+                              if (Number.isNaN(numericValue)) return;
+                              if (numericValue > course.weight) {
+                                warnInvalidGrade(
+                                  `La cote maximale pour ce cours est ${course.weight}.`,
+                                );
+                                return;
+                              }
+                              markGradeChanged();
+                              setGrades((current) => ({
+                                ...current,
+                                [key]: numericValue,
+                              }));
+                            }}
                           />
                         </td>
                       );

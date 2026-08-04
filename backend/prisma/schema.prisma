@@ -7,6 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model DeletionRequest {
+  id            String    @id @default(uuid())
+  entityType    String    @map("entity_type")
+  entityId      String    @map("entity_id")
+  entityLabel   String    @map("entity_label")
+  schoolId      String    @map("school_id")
+  requestedBy   String    @map("requested_by")
+  reason        String?
+  status        String    @default("PENDING")
+  dataSummary   Json?     @map("data_summary")
+  reviewedBy    String?   @map("reviewed_by")
+  reviewedAt    DateTime? @map("reviewed_at")
+  reviewComment String?   @map("review_comment")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([entityType, entityId])
+  @@map("deletion_requests")
+}
+
 model SuperAdmin {
   id                  String    @id @default(uuid())
   email               String    @unique

@@ -1,20 +1,52 @@
-import React from "react";
-import { Layout, Dropdown, Avatar, Space, Typography } from "antd";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Layout, Dropdown, Avatar, Badge, Button, Empty, Popover, Space, Spin, Typography } from "antd";
 import {
   BankOutlined,
   UserOutlined,
   LogoutOutlined,
   DownOutlined,
+  BellFilled,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
-import { getLoginRouteForRole } from "../../config/constants";
+import { getLoginRouteForRole, ROUTES } from "../../config/constants";
+import { api } from "../../lib/api";
 
 const { Header: AntHeader } = Layout;
 const { Text } = Typography;
 
 const Header: React.FC = () => {
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [deletionRequests, setDeletionRequests] = useState<Array<{
+    id: string;
+    entityLabel: string;
+    entityType: "CLASS" | "SCHOOL_YEAR";
+    schoolName: string;
+    status: string;
+    createdAt: string;
+  }>>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const isDirector = user?.role === "director";
+  const isSuperAdmin = user?.role === "super_admin";
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let active = true;
+    const loadNotifications = async () => {
+      setNotificationsLoading(true);
+      try {
+        const response = await api.get<typeof deletionRequests>("/deletion-requests");
+        if (active) setDeletionRequests(response.data.filter((item) => item.status === "PENDING"));
+      } finally {
+        if (active) setNotificationsLoading(false);
+      }
+    };
+    void loadNotifications();
+    const interval = window.setInterval(() => void loadNotifications(), 30000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [isSuperAdmin]);
   const schoolName = isDirector
     ? user?.lastName || "Votre établissement"
     : "";
@@ -44,6 +76,40 @@ const Header: React.FC = () => {
       onClick: handleLogout,
     },
   ];
+
+  const notificationPanel = (
+    <div className="admin-notifications">
+      <div className="admin-notifications__heading">
+        <strong>Notifications</strong>
+        <span>{deletionRequests.length} en attente</span>
+      </div>
+      <div className="admin-notifications__list">
+        {notificationsLoading && !deletionRequests.length ? (
+          <div className="admin-notifications__state"><Spin size="small" /></div>
+        ) : deletionRequests.length ? deletionRequests.slice(0, 6).map((item) => (
+          <button
+            type="button"
+            className="admin-notifications__item"
+            key={item.id}
+            onClick={() => navigate(ROUTES.DELETION_REQUESTS)}
+          >
+            <span className="admin-notifications__icon"><DeleteOutlined /></span>
+            <span className="admin-notifications__copy">
+              <strong>Demande de suppression</strong>
+              <span><b>{item.entityLabel}</b> · {item.schoolName}</span>
+              <small>{item.entityType === "CLASS" ? "Classe" : "Année scolaire"} · à vérifier</small>
+            </span>
+            <i aria-label="Non lue" />
+          </button>
+        )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Aucune nouvelle demande" />}
+      </div>
+      {deletionRequests.length > 0 && (
+        <Button type="link" block className="admin-notifications__all" onClick={() => navigate(ROUTES.DELETION_REQUESTS)}>
+          Voir et traiter toutes les demandes
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <AntHeader
@@ -98,12 +164,23 @@ const Header: React.FC = () => {
           </Dropdown>
         </div>
       ) : (
-        <Dropdown menu={{ items: menuItems }} placement="bottomRight">
-          <Space style={{ cursor: "pointer" }}>
-            <Avatar icon={<UserOutlined />} />
-            <Text className="hide-on-mobile">{user?.email}</Text>
-          </Space>
-        </Dropdown>
+        <Space size={14}>
+          {isSuperAdmin && (
+            <Popover content={notificationPanel} trigger="click" placement="bottomRight" arrow={false} overlayClassName="admin-notifications-popover">
+              <Badge count={deletionRequests.length} size="small" overflowCount={99}>
+                <button type="button" className="admin-notifications__bell" aria-label="Demandes de suppression">
+                  <BellFilled />
+                </button>
+              </Badge>
+            </Popover>
+          )}
+          <Dropdown menu={{ items: menuItems }} placement="bottomRight">
+            <Space style={{ cursor: "pointer" }}>
+              <Avatar icon={<UserOutlined />} />
+              <Text className="hide-on-mobile">{user?.email}</Text>
+            </Space>
+          </Dropdown>
+        </Space>
       )}
     </AntHeader>
   );

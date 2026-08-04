@@ -69,6 +69,13 @@ interface ClassOption {
   isActive: boolean;
 }
 
+interface SchoolYearOption {
+  id: string;
+  label: string;
+  isActive: boolean;
+  status: string;
+}
+
 const initialStudents: StudentRow[] = [];
 
 interface StudentDateValue {
@@ -88,6 +95,7 @@ interface StudentDraftValues {
 
 interface StudentFormValues {
   students?: StudentDraftValues[];
+  schoolYearId?: string;
   lastName: string;
   middleName: string;
   firstName: string;
@@ -101,6 +109,7 @@ interface StudentFormValues {
 const StudentsPage = () => {
   const [students, setStudents] = useState(initialStudents);
   const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [schoolYears, setSchoolYears] = useState<SchoolYearOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [search, setSearch] = useState("");
@@ -120,8 +129,10 @@ const StudentsPage = () => {
   const buildStudentPayload = (
     values: StudentDraftValues,
     photo?: string | null,
+    schoolYearId?: string,
   ) => ({
     classId: Number(values.classId),
+    ...(schoolYearId ? { schoolYearId: Number(schoolYearId) } : {}),
     lastName: values.lastName,
     postName: values.middleName,
     firstName: values.firstName,
@@ -182,14 +193,23 @@ const StudentsPage = () => {
         .catch(() => setClasses([]));
     };
 
+    const loadSchoolYears = () => {
+      api
+        .get<SchoolYearOption[]>("/school-years")
+        .then((response) => setSchoolYears(response.data))
+        .catch(() => setSchoolYears([]));
+    };
+
     loadStudents(true);
     loadClasses();
+    loadSchoolYears();
 
     let active = true;
     const refreshLists = () => {
       if (!active) return;
       loadStudents();
       loadClasses();
+      loadSchoolYears();
     };
 
     window.addEventListener("focus", refreshLists);
@@ -265,7 +285,11 @@ const StudentsPage = () => {
         if (batchSize === 1) {
           const response = await api.post<{ matricule: string }>(
             "/students",
-            buildStudentPayload(studentsToCreate[0], studentPhoto),
+            buildStudentPayload(
+              studentsToCreate[0],
+              studentPhoto,
+              values.schoolYearId,
+            ),
           );
           message.success(
             `Élève ajouté · matricule ${response.data.matricule}`,
@@ -275,7 +299,11 @@ const StudentsPage = () => {
             studentsToCreate.map((studentValues) =>
               api.post<{ matricule: string }>(
                 "/students",
-                buildStudentPayload(studentValues),
+                buildStudentPayload(
+                  studentValues,
+                  undefined,
+                  values.schoolYearId,
+                ),
               ),
             ),
           );
@@ -335,7 +363,10 @@ const StudentsPage = () => {
     setBatchSize(1);
     setStudentPhoto(null);
     form.resetFields();
-    form.setFieldsValue({ students: [{} as StudentDraftValues] });
+    form.setFieldsValue({
+      students: [{} as StudentDraftValues],
+      schoolYearId: schoolYears.find((year) => year.isActive)?.id,
+    });
     setIsModalOpen(true);
   };
 
@@ -355,6 +386,8 @@ const StudentsPage = () => {
     });
     setIsModalOpen(true);
   };
+
+  const activeSchoolYear = schoolYears.find((year) => year.isActive);
 
   const deleteStudent = async () => {
     if (!studentToDelete || !deletePassword) return;
@@ -582,25 +615,51 @@ const StudentsPage = () => {
               <strong>Fiche d’identification scolaire</strong>
               <span>Complétez les informations officielles de l’élève.</span>
             </div>
-            <b>2025—2026</b>
+            <b>{activeSchoolYear?.label ?? "Année non définie"}</b>
           </div>
           {!editingStudent && (
-            <Form.Item
-              label="Nombre d’élèves à ajouter"
-              extra="Vous pouvez enregistrer jusqu’à 10 élèves en une seule validation."
-            >
-              <Select
-                value={batchSize}
-                onChange={handleBatchSizeChange}
-                options={Array.from({ length: 10 }, (_, index) => {
-                  const value = index + 1;
-                  return {
-                    value,
-                    label: `${value} élève${value > 1 ? "s" : ""}`,
-                  };
-                })}
-              />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="schoolYearId"
+                label="Année scolaire en cours"
+                extra="Toutes les inscriptions, cotes, résultats et bulletins seront rattachés à cette année."
+                rules={[{ required: true, message: "Sélectionnez l’année scolaire en cours." }]}
+              >
+                <Select
+                  placeholder="Sélectionner l’année active"
+                  options={schoolYears.map((year) => ({
+                    value: year.id,
+                    label: `${year.label}${year.isActive ? " · En cours" : ""}`,
+                    disabled: !year.isActive,
+                  }))}
+                />
+              </Form.Item>
+              {!activeSchoolYear && (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="Aucune année scolaire active"
+                  description="Activez d’abord une année dans la section Années scolaires."
+                  style={{ marginBottom: 16 }}
+                />
+              )}
+              <Form.Item
+                label="Nombre d’élèves à ajouter"
+                extra="Vous pouvez enregistrer jusqu’à 10 élèves en une seule validation."
+              >
+                <Select
+                  value={batchSize}
+                  onChange={handleBatchSizeChange}
+                  options={Array.from({ length: 10 }, (_, index) => {
+                    const value = index + 1;
+                    return {
+                      value,
+                      label: `${value} élève${value > 1 ? "s" : ""}`,
+                    };
+                  })}
+                />
+              </Form.Item>
+            </>
           )}
 
           {!editingStudent && batchSize > 1 && (
