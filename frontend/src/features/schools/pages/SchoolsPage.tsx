@@ -42,6 +42,11 @@ type CreatedSchoolCredentials = {
   initialPassword: string;
 };
 
+type ResetPasswordForm = {
+  password: string;
+  confirmation: string;
+};
+
 const SchoolsPage = () => {
   const [schools, setSchools] = useState<School[]>(initialSchools);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,13 +57,11 @@ const SchoolsPage = () => {
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
   const [schoolToReset, setSchoolToReset] = useState<School | null>(null);
-  const [temporaryPasswords, setTemporaryPasswords] = useState<
-    Record<string, string>
-  >({});
   const [createdCredentials, setCreatedCredentials] =
     useState<CreatedSchoolCredentials | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [form] = Form.useForm<SchoolFormData>();
+  const [resetPasswordForm] = Form.useForm<ResetPasswordForm>();
 
   const loadSchools = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -166,10 +169,6 @@ const SchoolsPage = () => {
           code: response.data.code,
           initialPassword: response.data.initialPassword,
         });
-        setTemporaryPasswords((current) => ({
-          ...current,
-          [response.data.id]: response.data.initialPassword,
-        }));
         message.success(`${values.name} a été créée avec succès.`);
       }
       await loadSchools();
@@ -226,21 +225,15 @@ const SchoolsPage = () => {
 
   const confirmPasswordReset = async () => {
     if (!schoolToReset) return;
+    const values = await resetPasswordForm.validateFields();
     setIsSaving(true);
     try {
-      const response = await api.post<{ initialPassword: string }>(
+      await api.post(
         `/schools/${schoolToReset.id}/reset-password`,
+        { password: values.password },
       );
-      setTemporaryPasswords((current) => ({
-        ...current,
-        [schoolToReset.id]: response.data.initialPassword,
-      }));
-      setCreatedCredentials({
-        name: schoolToReset.name,
-        code: schoolToReset.code,
-        initialPassword: response.data.initialPassword,
-      });
       setSchoolToReset(null);
+      resetPasswordForm.resetFields();
       message.success("Le mot de passe a été réinitialisé.");
     } catch {
       message.error("La réinitialisation du mot de passe a échoué.");
@@ -281,14 +274,6 @@ const SchoolsPage = () => {
       render: (_, school) => (
         <div>
           <Text copyable>{school.code}</Text>
-          {temporaryPasswords[school.id] && (
-            <div>
-              <Text type="secondary">Mot de passe : </Text>
-              <Text copyable code>
-                {temporaryPasswords[school.id]}
-              </Text>
-            </div>
-          )}
         </div>
       ),
     },
@@ -541,18 +526,39 @@ const SchoolsPage = () => {
 
         <Modal
           open={Boolean(schoolToReset)}
-          title="Réinitialiser le mot de passe ?"
-          okText="Réinitialiser"
+          title="Définir un nouveau mot de passe"
+          okText="Enregistrer le mot de passe"
           cancelText="Annuler"
           confirmLoading={isSaving}
-          onCancel={() => setSchoolToReset(null)}
+          onCancel={() => {
+            setSchoolToReset(null);
+            resetPasswordForm.resetFields();
+          }}
           onOk={confirmPasswordReset}
         >
-          <Text>
-            L’ancien mot de passe de <strong>{schoolToReset?.name}</strong> ne
-            fonctionnera plus. Le nouveau mot de passe sera affiché
-            temporairement.
-          </Text>
+          <Text>L’ancien mot de passe de <strong>{schoolToReset?.name}</strong> ne fonctionnera plus.</Text>
+          <Form form={resetPasswordForm} layout="vertical" style={{ marginTop: 18 }}>
+            <Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}>
+              <Input.Password autoComplete="new-password" placeholder="Au moins 8 caractères" />
+            </Form.Item>
+            <Form.Item
+              name="confirmation"
+              label="Confirmer le mot de passe"
+              dependencies={["password"]}
+              rules={[
+                { required: true, message: "Confirmez le mot de passe." },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    return !value || getFieldValue("password") === value
+                      ? Promise.resolve()
+                      : Promise.reject(new Error("Les mots de passe ne correspondent pas."));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password autoComplete="new-password" placeholder="Retapez le mot de passe" />
+            </Form.Item>
+          </Form>
         </Modal>
 
         <Modal

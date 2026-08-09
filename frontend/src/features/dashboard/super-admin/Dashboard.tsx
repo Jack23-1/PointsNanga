@@ -45,8 +45,6 @@ import { ROUTES } from "../../../config/constants";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../../../lib/api";
 import educationPartnerAd from "../../../assets/education-partner-ad.png";
-import studentsPhoto from "../../../assets/eleves.jpeg";
-import classroomPhoto from "../../../assets/student-login-background.jpg";
 import { useAuth } from "../../../hooks/useAuth";
 
 type Workspace =
@@ -94,6 +92,9 @@ type GradeManagementRecord = {
   school: string;
   className: string;
   isValidated: boolean;
+  enrollmentId: string | null;
+  periods: { id: string; name: string; isOpen: boolean }[];
+  periodStatuses: Record<string, boolean>;
 };
 
 type SuperAdminRecord = {
@@ -133,32 +134,6 @@ type UserConfirmAction =
 const { Title, Text } = Typography;
 
 const academicRecords: AcademicRecord[] = [];
-
-const gradeManagementRecords: GradeManagementRecord[] = [];
-
-const gradePeriods = [
-  "1ère",
-  "2ème",
-  "1er Semestre",
-  "3ème",
-  "4ème",
-  "2ème semestre",
-];
-
-const gradeAdvertisementSlides = [
-  {
-    image: educationPartnerAd,
-    alt: "Élèves découvrant des outils numériques en classe",
-  },
-  {
-    image: studentsPhoto,
-    alt: "Élèves réunis dans leur établissement scolaire",
-  },
-  {
-    image: classroomPhoto,
-    alt: "Salle de classe d'un établissement partenaire",
-  },
-];
 
 const chartData: number[] = [];
 
@@ -238,30 +213,41 @@ const SuperAdminDashboard = () => {
     hasFullAccess: false,
   });
   const [gradeSearch, setGradeSearch] = useState("");
+  const [gradeManagementRecords, setGradeManagementRecords] = useState<GradeManagementRecord[]>([]);
+  const [gradeSummary, setGradeSummary] = useState({
+    totalStudents: 0,
+    activeStudents: 0,
+    totalGrades: 0,
+  });
   const [academicSchoolFilter, setAcademicSchoolFilter] = useState<
     string | undefined
   >();
-  const [gradeSchoolFilter, setGradeSchoolFilter] = useState<
-    string | undefined
-  >();
+  const [gradeSchoolFilter, setGradeSchoolFilter] = useState<string | undefined>();
   const [gradeClassFilter, setGradeClassFilter] = useState<
     string | undefined
   >();
-  const [gradePeriodFilter, setGradePeriodFilter] = useState<
-    string | undefined
-  >();
-  const [gradeValidationStatus, setGradeValidationStatus] = useState<
-    Record<string, boolean>
-  >(() =>
-    Object.fromEntries(
-      gradeManagementRecords.map((record) => [record.key, record.isValidated]),
-    ),
+  const [gradePeriodFilter, setGradePeriodFilter] = useState<string | undefined>(
+    () => localStorage.getItem("superadmin_grade_period") || undefined,
   );
   const selectedGradeSchool = schools.find(
     (school) => school.name === gradeSchoolFilter,
   );
   const selectedAcademicSchool = schools.find(
     (school) => school.name === academicSchoolFilter,
+  );
+  const gradePeriods = useMemo(
+    () => Array.from(
+      new Map(
+        gradeManagementRecords
+          .filter((record) => record.school === gradeSchoolFilter)
+          .flatMap((record) => record.periods)
+          .map((period) => [period.id, period]),
+      ).values(),
+    ),
+    [gradeManagementRecords, gradeSchoolFilter],
+  );
+  const selectedGradePeriodIsOpen = Boolean(
+    gradePeriods.find((period) => period.id === gradePeriodFilter)?.isOpen,
   );
 
   useEffect(() => {
@@ -313,6 +299,44 @@ const SuperAdminDashboard = () => {
     }
   };
 
+  const loadGradeSummary = async () => {
+    try {
+      const response = await api.get<{
+        totalStudents: number;
+        activeStudents: number;
+        totalGrades: number;
+      }>("/grades/admin/summary");
+      setGradeSummary(response.data);
+    } catch {
+      setGradeSummary({ totalStudents: 0, activeStudents: 0, totalGrades: 0 });
+    }
+  };
+
+  const loadGradeStudents = async () => {
+    try {
+      const response = await api.get<Array<{
+        id: string;
+        matricule: string;
+        lastName: string;
+        postName: string;
+        firstName: string;
+        school: string;
+        className: string;
+        enrollmentId: string | null;
+        periods: { id: string; name: string; isOpen: boolean }[];
+        periodStatuses: Record<string, boolean>;
+        hasGrades: boolean;
+      }>>("/grades/admin/students");
+      setGradeManagementRecords(response.data.map((record) => ({
+        ...record,
+        key: record.id,
+        isValidated: Object.values(record.periodStatuses).some(Boolean),
+      })));
+    } catch {
+      setGradeManagementRecords([]);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -323,6 +347,8 @@ const SuperAdminDashboard = () => {
     };
 
     void loadSchools(true);
+    void loadGradeSummary();
+    void loadGradeStudents();
     window.addEventListener("focus", refreshSchools);
     document.addEventListener("visibilitychange", refreshSchools);
 
@@ -546,10 +572,11 @@ const SuperAdminDashboard = () => {
       return (
         matchesSearch &&
         (!gradeSchoolFilter || record.school === gradeSchoolFilter) &&
-        (!gradeClassFilter || record.className === gradeClassFilter)
+        (!gradeClassFilter || record.className === gradeClassFilter) &&
+        (!gradePeriodFilter || record.periods.some((period) => period.id === gradePeriodFilter))
       );
     });
-  }, [gradeClassFilter, gradeSchoolFilter, gradeSearch]);
+  }, [gradeClassFilter, gradePeriodFilter, gradeSchoolFilter, gradeSearch, gradeManagementRecords]);
 
   const schoolColumns: ColumnsType<School> = [
     {
@@ -668,6 +695,14 @@ const SuperAdminDashboard = () => {
 
   const gradeManagementColumns: ColumnsType<GradeManagementRecord> = [
     {
+      title: "N°",
+      key: "number",
+      width: 64,
+      fixed: "left",
+      align: "center",
+      render: (_value, _record, index) => <strong>{index + 1}</strong>,
+    },
+    {
       title: "Matricule",
       dataIndex: "matricule",
       fixed: "left",
@@ -709,15 +744,38 @@ const SuperAdminDashboard = () => {
       align: "center",
       render: (_, record) => (
         <Checkbox
-          checked={gradeValidationStatus[record.key]}
-          className="super-admin-dashboard__grade-status-checkbox"
-          aria-label={`Valider le statut de ${record.firstName} ${record.lastName}`}
-          onChange={(event) =>
-            setGradeValidationStatus((currentStatus) => ({
-              ...currentStatus,
-              [record.key]: event.target.checked,
-            }))
+          checked={gradePeriodFilter ? Boolean(record.periodStatuses[gradePeriodFilter]) : record.isValidated}
+          disabled={
+            !gradePeriodFilter ||
+            !record.enrollmentId ||
+            !selectedGradePeriodIsOpen
           }
+          className="super-admin-dashboard__grade-status-checkbox"
+          aria-label={`Autoriser les résultats de ${record.firstName} ${record.lastName}`}
+          onChange={async (event) => {
+            if (
+              !gradePeriodFilter ||
+              !record.enrollmentId ||
+              !selectedGradePeriodIsOpen
+            ) return;
+            const isVisible = event.target.checked;
+            setGradeManagementRecords((current) => current.map((item) =>
+              item.key === record.key
+                ? { ...item, periodStatuses: { ...item.periodStatuses, [gradePeriodFilter]: isVisible } }
+                : item,
+            ));
+            try {
+              await api.patch(`/grades/admin/students/${record.enrollmentId}/periods/${gradePeriodFilter}`, { isVisible });
+              message.success(isVisible ? "Résultats rendus disponibles pour cet élève." : "Accès aux résultats retiré pour cette période.");
+            } catch {
+              setGradeManagementRecords((current) => current.map((item) =>
+                item.key === record.key
+                  ? { ...item, periodStatuses: { ...item.periodStatuses, [gradePeriodFilter]: !isVisible } }
+                  : item,
+              ));
+              message.error("Impossible de modifier la disponibilité des résultats.");
+            }
+          }}
         />
       ),
     },
@@ -1068,66 +1126,38 @@ const SuperAdminDashboard = () => {
             écoles.
           </Text>
         </div>
-        <Space wrap>
-          <Button icon={<DownloadOutlined />}>Exporter les cotes</Button>
-          <Button type="primary" icon={<FileTextOutlined />}>
-            Valider la publication
-          </Button>
-        </Space>
       </div>
       <Row
         gutter={[18, 18]}
         className="super-admin-dashboard__academic-counters super-admin-dashboard__grade-highlights"
       >
-        <Col xs={24} sm={12} lg={8} xl={8}>
+        <Col xs={24} sm={12} lg={8}>
           <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--blue super-admin-dashboard__grade-students-card">
             <span className="super-admin-dashboard__metric-icon">
               <TeamOutlined />
             </span>
             <Statistic
               title="Total élèves"
-              value={schools.reduce((total, school) => total + school.students, 0)}
+              value={gradeSummary.totalStudents}
               formatter={(value) => Number(value).toLocaleString("fr-FR")}
             />
             <small>
-              <RiseOutlined /> Toutes les écoles actives
+              {gradeSummary.activeStudents.toLocaleString("fr-FR")} élèves actifs
             </small>
           </Card>
         </Col>
-
-        <Col xs={24} sm={12} lg={8} xl={8}>
-          <Card
-            bordered={false}
-            className="super-admin-dashboard__card super-admin-dashboard__grade-ad-card"
-          >
-            <aside
-              className="super-admin-dashboard__grade-ad-carousel"
-              aria-label="Espace publicitaire"
-            >
-              {gradeAdvertisementSlides.map((slide, index) => (
-                <img
-                  key={slide.image}
-                  src={slide.image}
-                  alt={slide.alt}
-                  className="super-admin-dashboard__grade-ad-slide"
-                  style={{ animationDelay: `${index * 4}s` }}
-                />
-              ))}
-            </aside>
+        <Col xs={24} sm={12} lg={8}>
+          <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--green">
+            <span className="super-admin-dashboard__metric-icon"><CheckCircleFilled /></span>
+            <Statistic title="Élèves avec cotes" value={gradeManagementRecords.filter((record) => record.isValidated).length} />
+            <small>Données réellement validées</small>
           </Card>
         </Col>
-
-        <Col xs={24} sm={12} lg={8} xl={8}>
-          <Card className="super-admin-dashboard__metric super-admin-dashboard__grade-readiness-card">
-            <div className="super-admin-dashboard__grade-readiness-ring" aria-hidden="true">
-              <strong>97%</strong>
-            </div>
-            <div className="super-admin-dashboard__grade-readiness-copy">
-              <span>Publication</span>
-              <strong>Prête à valider</strong>
-              <Text>37 218 cotes contrôlées</Text>
-              <small><CheckCircleFilled /> Contrôle national conforme</small>
-            </div>
+        <Col xs={24} sm={12} lg={8}>
+          <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--orange">
+            <span className="super-admin-dashboard__metric-icon"><FileTextOutlined /></span>
+            <Statistic title="Cotes enregistrées" value={gradeSummary.totalGrades} />
+            <small>Données enregistrées dans la base</small>
           </Card>
         </Col>
       </Row>
@@ -1146,7 +1176,7 @@ const SuperAdminDashboard = () => {
                 root: "super-admin-dashboard__grade-filter-popup super-admin-dashboard__school-filter-popup",
               },
             }}
-            placeholder="Choisir une école"
+            placeholder="Toutes les écoles"
             allowClear
             showSearch
             optionFilterProp="label"
@@ -1168,6 +1198,9 @@ const SuperAdminDashboard = () => {
             onChange={(value) => {
               setGradeSchoolFilter(value);
               setGradeClassFilter(undefined);
+              setGradePeriodFilter(undefined);
+              localStorage.removeItem("superadmin_grade_period");
+              localStorage.removeItem("superadmin_grade_school");
             }}
             options={schools.map((school) => ({ label: school.name, value: school.name }))}
             optionRender={(option) => {
@@ -1219,22 +1252,28 @@ const SuperAdminDashboard = () => {
             classNames={{
               popup: { root: "super-admin-dashboard__grade-filter-popup" },
             }}
-            placeholder="Période"
+            placeholder={gradeSchoolFilter ? "Période" : "Choisissez une école"}
             allowClear
             prefix={<CalendarOutlined />}
             style={{ width: 210 }}
+            disabled={!gradeSchoolFilter}
             value={gradePeriodFilter}
-            onChange={setGradePeriodFilter}
+            onChange={(value) => {
+              setGradePeriodFilter(value);
+              if (value) localStorage.setItem("superadmin_grade_period", value);
+              else localStorage.removeItem("superadmin_grade_period");
+            }}
             options={gradePeriods.map((period) => ({
-              label: period,
-              value: period,
+              label: period.isOpen ? period.name : `${period.name} — Fermée`,
+              value: period.id,
+              disabled: !period.isOpen,
             }))}
           />
         </div>
         <Table
           columns={gradeManagementColumns}
           dataSource={filteredGradeManagementRecords}
-          pagination={{ pageSize: 8 }}
+          pagination={false}
           scroll={{ x: 995 }}
         />
       </Card>

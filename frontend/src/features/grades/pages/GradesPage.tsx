@@ -10,6 +10,7 @@ import {
 import {
   BookOutlined,
   CloudSyncOutlined,
+  CheckCircleOutlined,
   LoadingOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -26,10 +27,13 @@ import {
   InputNumber,
   Skeleton,
   Tooltip,
+  Modal,
   message,
+  Select,
 } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
+import { API_URL } from "../../../config/constants";
 
 interface Student {
   id: string;
@@ -53,11 +57,35 @@ interface Gradebook {
   periods: { id: string; name: string; number: number; isOpen: boolean }[];
   students: Student[];
   courses: Course[];
+  submissionStatus: "SUBMITTED" | "APPROVED" | "REOPENED" | null;
   grades: {
     enrollmentId: string;
     courseClassId: string;
     value: number;
   }[];
+  results?: {
+    enrollmentId: string;
+    totalObtained: number;
+    totalWeight: number;
+    percentage: number;
+    rank: number | null;
+    conduite?: AppreciationValue | null;
+    application?: AppreciationValue | null;
+  }[];
+}
+
+type AppreciationValue = "bonne" | "mauvaise" | "mediocre" | "excellente";
+
+interface StudentAppreciation {
+  conduite?: AppreciationValue | null;
+  application?: AppreciationValue | null;
+}
+
+interface StudentSummary {
+  totalObtained: number;
+  totalWeight: number;
+  percentage: number;
+  rank: number;
 }
 
 const gradeKey = (studentId: string, courseId: string) =>
@@ -68,6 +96,22 @@ const clampGradeValue = (value: number, weight: number) =>
 
 const getGradeInputId = (studentId: string, courseId: string) =>
   `grade-input-${studentId}-${courseId}`;
+
+const appreciationOptions: { value: AppreciationValue; label: string }[] = [
+  { value: "excellente", label: "Excellente" },
+  { value: "bonne", label: "Bonne" },
+  { value: "mediocre", label: "Médiocre" },
+  { value: "mauvaise", label: "Mauvaise" },
+];
+
+const formatGradeNumber = (value: number) =>
+  new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+
+const roundToTwoDecimals = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
 
 const ALLOWED_GRADE_KEYS = new Set([
   "Backspace",
@@ -121,9 +165,13 @@ interface GradesPageProps {
 const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   const [data, setData] = useState<Gradebook | null>(null);
   const [grades, setGrades] = useState<Record<string, number>>({});
+  const [appreciations, setAppreciations] = useState<
+    Record<string, StudentAppreciation>
+  >({});
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [editVersion, setEditVersion] = useState(0);
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     "saved" | "pending" | "saving"
@@ -162,6 +210,17 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           }),
         ),
       );
+      setAppreciations(
+        Object.fromEntries(
+          (response.data.results ?? []).map((result) => [
+            result.enrollmentId,
+            {
+              conduite: result.conduite ?? null,
+              application: result.application ?? null,
+            },
+          ]),
+        ),
+      );
     } catch (error) {
       message.error(errorMessage(error, "Chargement des cotes impossible."));
     } finally {
@@ -182,6 +241,68 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         .includes(normalized),
     );
   }, [data, query]);
+
+  const studentSummaries = useMemo<Record<string, StudentSummary>>(() => {
+    if (!data) return {};
+    const totalWeight = data.courses.reduce(
+      (sum, course) => sum + course.weight,
+      0,
+    );
+    const summaries = data.students.map((student) => {
+      const totalObtained = data.courses.reduce(
+        (sum, course) => sum + (grades[gradeKey(student.id, course.id)] ?? 0),
+        0,
+      );
+      return {
+        studentId: student.id,
+        totalObtained: roundToTwoDecimals(totalObtained),
+        totalWeight: roundToTwoDecimals(totalWeight),
+        percentage:
+          totalWeight > 0
+            ? roundToTwoDecimals((totalObtained / totalWeight) * 100)
+            : 0,
+        rank: 0,
+      };
+    });
+    const sortedSummaries = [...summaries].sort(
+      (left, right) => right.percentage - left.percentage,
+    );
+    let lastPercentage: number | null = null;
+    let currentRank = 0;
+    sortedSummaries.forEach((summary, index) => {
+      if (lastPercentage === null || summary.percentage !== lastPercentage) {
+        currentRank = index + 1;
+        lastPercentage = summary.percentage;
+      }
+      summary.rank = currentRank;
+    });
+    return Object.fromEntries(
+      summaries.map((summary) => [
+        summary.studentId,
+        {
+          totalObtained: summary.totalObtained,
+          totalWeight: summary.totalWeight,
+          percentage: summary.percentage,
+          rank: summary.rank,
+        },
+      ]),
+    );
+  }, [data, grades]);
+
+  const changeAppreciation = (
+    studentId: string,
+    field: keyof StudentAppreciation,
+    value?: AppreciationValue,
+  ) => {
+    markGradeChanged();
+    setAppreciations((current) => ({
+      ...current,
+      [studentId]: {
+        ...current[studentId],
+        [field]: value ?? null,
+      },
+    }));
+  };
 
   const focusGradeCell = (rowIndex: number, columnIndex: number) => {
     if (!data) return;
@@ -321,12 +442,18 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         value: clampGradeValue(value, weight),
       };
     });
+    const appreciationPayload = (data.students ?? []).map((student) => ({
+      enrollmentId: Number(student.id),
+      conduite: appreciations[student.id]?.conduite ?? null,
+      application: appreciations[student.id]?.application ?? null,
+    }));
     setSaving(true);
     if (automatic) setAutoSaveStatus("saving");
     try {
       await api.patch("/grades/homeroom", {
         periodId: Number(data.period.id),
         grades: payload,
+        appreciations: appreciationPayload,
       });
       if (automatic) {
         if (versionBeingSaved === editVersionRef.current) {
@@ -348,8 +475,67 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     }
   };
 
+  const submitGrades = () => {
+    if (!data?.period) return;
+    const missingGradeCount = data.students.reduce(
+      (count, student) =>
+        count +
+        data.courses.filter((course) => {
+          const value = grades[gradeKey(student.id, course.id)];
+          return value === undefined || Number.isNaN(value);
+        }).length,
+      0,
+    );
+    if (missingGradeCount > 0) {
+      message.warning(
+        `Validation impossible : ${missingGradeCount} cote${missingGradeCount > 1 ? "s sont manquantes" : " est manquante"}.`,
+      );
+      return;
+    }
+    const missingAppreciationCount = data.students.reduce((count, student) => {
+      const appreciation = appreciations[student.id];
+      return (
+        count +
+        (appreciation?.conduite ? 0 : 1) +
+        (appreciation?.application ? 0 : 1)
+      );
+    }, 0);
+    if (missingAppreciationCount > 0) {
+      message.warning(
+        `Validation impossible : ${missingAppreciationCount} champ${missingAppreciationCount > 1 ? "s sont manquants" : " est manquant"} dans Conduite ou Application.`,
+      );
+      return;
+    }
+    Modal.confirm({
+      centered: true,
+      title: `Valider les cotes de ${data.period.name} ?`,
+      content: "Le directeur recevra une notification indiquant que les cotes de cette période ont été envoyées.",
+      okText: "Valider et envoyer",
+      cancelText: "Annuler",
+      async onOk() {
+        setSubmitting(true);
+        try {
+          await save(true);
+          await api.post("/grades/homeroom/submit", { periodId: data.period?.id });
+          message.success("Les cotes ont été validées et le directeur a été notifié.");
+          await loadGradebook(data.period?.id);
+        } catch (error) {
+          message.error(errorMessage(error, "Validation des cotes impossible."));
+          throw error;
+        } finally {
+          setSubmitting(false);
+        }
+      },
+    });
+  };
+
   useEffect(() => {
-    if (editVersion === 0 || !data?.period?.isOpen) return;
+    if (
+      editVersion === 0 ||
+      !data ||
+      (!["REOPENED"].includes(data.submissionStatus ?? "") && !data.period?.isOpen) ||
+      ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "")
+    ) return;
 
     const timeoutId = window.setTimeout(() => {
       void save(true);
@@ -359,6 +545,30 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     // The edit version intentionally restarts this one-second debounce.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editVersion]);
+
+  useEffect(() => {
+    const events = new EventSource(`${API_URL}/grade-submissions/homeroom/events`, {
+      withCredentials: true,
+    });
+    events.onmessage = (event) => {
+      try {
+        const update = JSON.parse(event.data) as { action?: string };
+        if (update.action === "approved" || update.action === "reopened") {
+          void loadGradebook(data?.period?.id);
+          message.info(
+            update.action === "reopened"
+              ? "Le directeur a ouvert votre grille pour correction."
+              : "Le directeur a approuvé et verrouillé votre grille.",
+          );
+        }
+      } catch {
+        // Les battements de connexion sans données métier sont ignorés.
+      }
+    };
+    return () => events.close();
+    // La connexion reste stable ; l’identifiant courant est lu lors de l’événement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.period?.id]);
 
   if (loading && !data) {
     return <Skeleton active paragraph={{ rows: 14 }} />;
@@ -373,6 +583,9 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
       </Card>
     );
   }
+
+  const isLocked = ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "");
+  const canEdit = !isLocked && (Boolean(data.period?.isOpen) || data.submissionStatus === "REOPENED");
 
   const headerRotationClass = "gradebook__sheet--rotate-90";
   const longestCourseName = data.courses.reduce(
@@ -395,8 +608,8 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           <span>Carnet de cotes · {data.schoolYear}</span>
           <h1>{data.className}</h1>
           <p>
-            {data.period?.isOpen
-              ? `Saisie ouverte pour : ${data.period.name}`
+            {canEdit
+              ? `Saisie ouverte pour : ${data.period?.name ?? "la période sélectionnée"}`
               : data.period
                 ? `Consultation : ${data.period.name}`
               : "La saisie est suspendue jusqu’à l’ouverture d’une période."}
@@ -418,11 +631,20 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           <Button
             type="primary"
             icon={<SaveOutlined />}
-            disabled={!data.period?.isOpen}
+            disabled={!canEdit}
             loading={saving}
             onClick={() => void save(false)}
           >
             Enregistrer les cotes
+          </Button>
+          <Button
+            type="primary"
+            icon={<CheckCircleOutlined />}
+            disabled={!canEdit}
+            loading={submitting}
+            onClick={submitGrades}
+          >
+            {isLocked ? "Cotes validées" : "Valider les cotes"}
           </Button>
         </div>
       </header>
@@ -442,12 +664,28 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         ))}
       </nav>
 
-      {!data.period?.isOpen && (
+      {!data.period?.isOpen && data.submissionStatus !== "REOPENED" && (
         <Alert
           showIcon
           type="info"
           message={`${data.period?.name ?? "Cette période"} est en consultation`}
           description="Les cotes de cette période sont visibles mais ne peuvent être modifiées que lorsqu’elle est ouverte."
+        />
+      )}
+      {data.submissionStatus === "REOPENED" && (
+        <Alert
+          showIcon
+          type="warning"
+          message="Grille ouverte par le directeur"
+          description="Vous pouvez corriger les cotes. Une nouvelle validation sera obligatoire après vos modifications."
+        />
+      )}
+      {isLocked && (
+        <Alert
+          showIcon
+          type="success"
+          message="Cotes validées et envoyées au directeur"
+          description="Cette grille est verrouillée. Seul le directeur peut autoriser une nouvelle modification."
         />
       )}
 
@@ -528,6 +766,39 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                       </Tooltip>
                     </th>
                   ))}
+                  <th className="gradebook__result-column gradebook__choice-column">
+                    <div className="gradebook__course-title">
+                      <strong className="gradebook__course-name">
+                        Conduite
+                      </strong>
+                    </div>
+                  </th>
+                  <th className="gradebook__result-column gradebook__choice-column">
+                    <div className="gradebook__course-title">
+                      <strong className="gradebook__course-name">
+                        Application
+                      </strong>
+                    </div>
+                  </th>
+                  <th className="gradebook__result-column">
+                    <div className="gradebook__course-title">
+                      <strong className="gradebook__course-name">Place</strong>
+                    </div>
+                  </th>
+                  <th className="gradebook__result-column">
+                    <div className="gradebook__course-title">
+                      <strong className="gradebook__course-name">
+                        Total général
+                      </strong>
+                    </div>
+                  </th>
+                  <th className="gradebook__result-column">
+                    <div className="gradebook__course-title">
+                      <strong className="gradebook__course-name">
+                        Pourcentage
+                      </strong>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -548,97 +819,152 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                       </span>
                     </td>
                   ))}
+                  <td className="gradebook__meta-cell">Choix</td>
+                  <td className="gradebook__meta-cell">Choix</td>
+                  <td className="gradebook__meta-cell">Auto</td>
+                  <td className="gradebook__meta-cell">
+                    {formatGradeNumber(
+                      data.courses.reduce((sum, course) => sum + course.weight, 0),
+                    )}
+                  </td>
+                  <td className="gradebook__meta-cell">100%</td>
                 </tr>
-                {students.map((student, rowIndex) => (
-                  <tr key={student.id}>
-                    <th className="gradebook__student-column">
-                      <div className="gradebook__student">
-                        <span className="gradebook__student-number">
-                          {student.orderNumber ?? rowIndex + 1}
-                        </span>
-                        <Avatar
-                          src={student.photo || undefined}
-                          icon={<UserOutlined />}
-                        />
-                        <div>
-                          <strong>{student.name}</strong>
-                          <small>{student.matricule}</small>
-                        </div>
-                      </div>
-                    </th>
-                    {data.courses.map((course, columnIndex) => {
-                      const key = gradeKey(student.id, course.id);
-                      const inputId = getGradeInputId(student.id, course.id);
-                      const value = grades[key];
-                      const isFail =
-                        value !== undefined && value < course.weight / 2;
-                      const isPass =
-                        value !== undefined && value >= course.weight / 2;
-                      return (
-                        <td key={course.id}>
-                          <InputNumber
-                            className={`gradebook__input${isFail ? " gradebook__input--fail" : isPass ? " gradebook__input--pass" : ""}`}
-                            controls={false}
-                            min={0}
-                            max={course.weight}
-                            precision={0}
-                            id={inputId}
-                            inputMode="numeric"
-                            parser={(displayValue) => {
-                              const sanitized = (displayValue ?? "").replace(
-                                /\D+/g,
-                                "",
-                              );
-                              return sanitized === ""
-                                ? Number.NaN
-                                : Number(sanitized);
-                            }}
-                            value={value}
-                            disabled={!data.period?.isOpen}
-                            onKeyDown={(event) =>
-                              handleGradeKeyDown(
-                                event,
-                                rowIndex,
-                                columnIndex,
-                                course.weight,
-                              )
-                            }
-                            onPaste={(event) =>
-                              handleGradePaste(event, key, course.weight)
-                            }
-                            onChange={(value) => {
-                              if (value === null) {
-                                markGradeChanged();
-                                setGrades((current) => {
-                                  const next = { ...current };
-                                  delete next[key];
-                                  return next;
-                                });
-                                return;
-                              }
-                              const numericValue =
-                                typeof value === "number"
-                                  ? value
-                                  : Number(value);
-                              if (Number.isNaN(numericValue)) return;
-                              if (numericValue > course.weight) {
-                                warnInvalidGrade(
-                                  `La cote maximale pour ce cours est ${course.weight}.`,
-                                );
-                                return;
-                              }
-                              markGradeChanged();
-                              setGrades((current) => ({
-                                ...current,
-                                [key]: numericValue,
-                              }));
-                            }}
+                {students.map((student, rowIndex) => {
+                  const summary = studentSummaries[student.id] ?? {
+                    totalObtained: 0,
+                    totalWeight: 0,
+                    percentage: 0,
+                    rank: rowIndex + 1,
+                  };
+                  const summaryPassed = summary.percentage >= 50;
+                  return (
+                    <tr key={student.id}>
+                      <th className="gradebook__student-column">
+                        <div className="gradebook__student">
+                          <span className="gradebook__student-number">
+                            {student.orderNumber ?? rowIndex + 1}
+                          </span>
+                          <Avatar
+                            src={student.photo || undefined}
+                            icon={<UserOutlined />}
                           />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                          <div>
+                            <strong>{student.name}</strong>
+                            <small>{student.matricule}</small>
+                          </div>
+                        </div>
+                      </th>
+                      {data.courses.map((course, columnIndex) => {
+                        const key = gradeKey(student.id, course.id);
+                        const inputId = getGradeInputId(student.id, course.id);
+                        const value = grades[key];
+                        const isFail =
+                          value !== undefined && value < course.weight / 2;
+                        const isPass =
+                          value !== undefined && value >= course.weight / 2;
+                        return (
+                          <td key={course.id}>
+                            <InputNumber
+                              className={`gradebook__input${isFail ? " gradebook__input--fail" : isPass ? " gradebook__input--pass" : ""}`}
+                              controls={false}
+                              min={0}
+                              max={course.weight}
+                              precision={0}
+                              id={inputId}
+                              inputMode="numeric"
+                              parser={(displayValue) => {
+                                const sanitized = (displayValue ?? "").replace(
+                                  /\D+/g,
+                                  "",
+                                );
+                                return sanitized === ""
+                                  ? Number.NaN
+                                  : Number(sanitized);
+                              }}
+                              value={value}
+                              disabled={!canEdit}
+                              onKeyDown={(event) =>
+                                handleGradeKeyDown(
+                                  event,
+                                  rowIndex,
+                                  columnIndex,
+                                  course.weight,
+                                )
+                              }
+                              onPaste={(event) =>
+                                handleGradePaste(event, key, course.weight)
+                              }
+                              onChange={(value) => {
+                                if (value === null) {
+                                  markGradeChanged();
+                                  setGrades((current) => {
+                                    const next = { ...current };
+                                    delete next[key];
+                                    return next;
+                                  });
+                                  return;
+                                }
+                                const numericValue =
+                                  typeof value === "number"
+                                    ? value
+                                    : Number(value);
+                                if (Number.isNaN(numericValue)) return;
+                                if (numericValue > course.weight) {
+                                  warnInvalidGrade(
+                                    `La cote maximale pour ce cours est ${course.weight}.`,
+                                  );
+                                  return;
+                                }
+                                markGradeChanged();
+                                setGrades((current) => ({
+                                  ...current,
+                                  [key]: numericValue,
+                                }));
+                              }}
+                            />
+                          </td>
+                        );
+                      })}
+                      <td className="gradebook__choice-cell">
+                        <Select
+                          allowClear
+                          disabled={!canEdit}
+                          options={appreciationOptions}
+                          placeholder="-"
+                          size="small"
+                          value={appreciations[student.id]?.conduite ?? undefined}
+                          onChange={(value) =>
+                            changeAppreciation(student.id, "conduite", value)
+                          }
+                        />
+                      </td>
+                      <td className="gradebook__choice-cell">
+                        <Select
+                          allowClear
+                          disabled={!canEdit}
+                          options={appreciationOptions}
+                          placeholder="-"
+                          size="small"
+                          value={appreciations[student.id]?.application ?? undefined}
+                          onChange={(value) =>
+                            changeAppreciation(student.id, "application", value)
+                          }
+                        />
+                      </td>
+                      <td className="gradebook__summary-cell">
+                        {summary.rank}
+                      </td>
+                      <td className="gradebook__summary-cell">
+                        {formatGradeNumber(summary.totalObtained)}
+                      </td>
+                      <td
+                        className={`gradebook__summary-cell ${summaryPassed ? "is-pass" : "is-fail"}`}
+                      >
+                        {formatGradeNumber(summary.percentage)}%
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

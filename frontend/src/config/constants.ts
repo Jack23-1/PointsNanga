@@ -1,5 +1,5 @@
 export const APP_NAME = 'PointsNanga';
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const ROUTES = {
   LOGIN: '/login',
@@ -16,6 +16,7 @@ export const ROUTES = {
   HOMEROOM_TEACHERS: '/homeroom-teachers',
   COURSE_ASSIGNMENTS: '/course-assignments',
   SCHOOL_YEARS: '/school-years',
+  GRADE_APPROVALS: '/grade-approvals',
   DELETION_REQUESTS: '/deletion-requests',
   GRADES: '/grades',
   RESULTS: '/results',
@@ -25,7 +26,7 @@ export const ROUTES = {
 
 export const ROLE_ROUTES = {
   super_admin: ['/dashboard', '/schools', '/deletion-requests', '/settings'],
-  director: ['/dashboard', '/students', '/classes', '/teachers', '/courses', '/homeroom-teachers', '/course-assignments', '/school-years', '/results', '/settings'],
+  director: ['/dashboard', '/students', '/classes', '/teachers', '/courses', '/homeroom-teachers', '/course-assignments', '/school-years', '/grade-approvals', '/results', '/settings'],
   teacher: ['/dashboard', '/grades', '/results'],
   student: ['/dashboard', '/results', '/bulletins'],
 } as const;

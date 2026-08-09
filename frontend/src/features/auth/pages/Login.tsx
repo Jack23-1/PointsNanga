@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   BookOutlined,
   CalendarOutlined,
@@ -32,9 +33,20 @@ interface StudentProfile {
   photoUrl?: string;
 }
 
-const MATRICULE_LENGTH = 6;
-const STUDENT_LOOKUP_DELAY = 2000;
+const MATRICULE_LENGTH = 8;
+const MATRICULE_PATTERN = /^[A-Z]{3}-[0-9]{4}$/;
 const STUDENT_FIELDS_REVEAL_DELAY = 950;
+
+const formatStudentMatricule = (value: string) => {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const letters = compact.match(/^[A-Z]{0,3}/)?.[0] ?? "";
+
+  if (letters.length < 3) return letters;
+
+  const digits = compact.slice(3).replace(/\D/g, "").slice(0, 4);
+  return `${letters}-${digits}`;
+};
+
 const academicPeriods = [
   { value: "1ère", label: "1ère période", detail: "Première période", code: "P1" },
   { value: "2ème", label: "2ème période", detail: "Deuxième période", code: "P2" },
@@ -71,6 +83,7 @@ export default function Login() {
   const periodPickerRef = useRef<HTMLDivElement>(null);
   const periodTriggerRef = useRef<HTMLButtonElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const lookupRequestRef = useRef(0);
   const selectedPeriod = academicPeriods.find(
     (periodOption) => periodOption.value === period,
   );
@@ -80,12 +93,13 @@ export default function Login() {
   }, []);
 
   useEffect(() => {
+    const requestId = ++lookupRequestRef.current;
     setStudentProfile(null);
     setPeriod("");
     setPassword("");
     setIsPeriodMenuOpen(false);
 
-    if (matricule.length !== MATRICULE_LENGTH) {
+    if (!MATRICULE_PATTERN.test(matricule)) {
       setIsSearchingStudent(false);
       return;
     }
@@ -93,20 +107,28 @@ export default function Login() {
     setIsSearchingStudent(true);
     setErrorMsg(null);
 
-    const lookupTimer = window.setTimeout(async () => {
+    void (async () => {
       try {
         const response = await api.get<StudentProfile>(
           `/students/by-matricule/${matricule}`,
         );
+        if (lookupRequestRef.current !== requestId) return;
         setStudentProfile(response.data);
-      } catch {
+      } catch (error) {
+        if (lookupRequestRef.current !== requestId) return;
         setStudentProfile(null);
-        setErrorMsg("Aucun élève actif trouvé avec ce matricule.");
+        setErrorMsg(
+          axios.isAxiosError(error) && !error.response
+            ? "Connexion au serveur impossible. Vérifiez que le backend est démarré."
+            : "Aucun élève actif trouvé avec ce matricule.",
+        );
       }
-      setIsSearchingStudent(false);
-    }, STUDENT_LOOKUP_DELAY);
+      if (lookupRequestRef.current === requestId) setIsSearchingStudent(false);
+    })();
 
-    return () => window.clearTimeout(lookupTimer);
+    return () => {
+      if (lookupRequestRef.current === requestId) lookupRequestRef.current += 1;
+    };
   }, [matricule]);
 
   useEffect(() => {
@@ -185,15 +207,39 @@ export default function Login() {
         role: "student",
         matricule,
         schoolName: resolvedStudent.schoolName,
-        password,
+        password: password.trim().toUpperCase(),
       });
 
-      localStorage.setItem("student_period", period);
+      try {
+        localStorage.setItem("student_period", selectedPeriod?.code ?? period);
+      } catch {
+        // A blocked storage must not cancel an otherwise valid authentication.
+      }
       updateUser(response.data.user);
 
-    } catch {
+    } catch (error) {
       setIsPageTransitioning(false);
-      setErrorMsg("Matricule ou mot de passe incorrect.");
+      if (axios.isAxiosError(error) && !error.response) {
+        setErrorMsg(
+          "Connexion au serveur impossible. Vérifiez que le backend est démarré.",
+        );
+      } else if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setErrorMsg("Le mot de passe élève est incorrect.");
+      } else if (axios.isAxiosError(error) && error.response) {
+        const responseMessage = (
+          error.response.data as { message?: string | string[] } | undefined
+        )?.message;
+        setErrorMsg(
+          Array.isArray(responseMessage)
+            ? responseMessage.join(" ")
+            : responseMessage ??
+                `Validation refusée par le serveur (${error.response.status}).`,
+        );
+      } else {
+        setErrorMsg(
+          "Le navigateur a interrompu la validation. Rechargez la page et réessayez.",
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -254,19 +300,34 @@ export default function Login() {
                   disabled={isLoading}
                   value={matricule}
                   ref={matriculeInputRef}
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
+                  inputMode="text"
+                  pattern="[A-Za-z]{3}-[0-9]{4}"
                   maxLength={MATRICULE_LENGTH}
                   autoComplete="username"
+                  autoCapitalize="characters"
                   spellCheck={false}
                   aria-describedby="matricule-status"
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Backspace" &&
+                      matricule.endsWith("-") &&
+                      event.currentTarget.selectionStart === matricule.length &&
+                      event.currentTarget.selectionEnd === matricule.length
+                    ) {
+                      event.preventDefault();
+                      setMatricule(matricule.slice(0, -2));
+                      setErrorMsg(null);
+                    }
+                  }}
                   onChange={(e) => {
-                    const digits = e.target.value
-                      .replace(/\D/g, "")
-                      .slice(0, MATRICULE_LENGTH);
-                    setMatricule(digits);
+                    const formattedMatricule = formatStudentMatricule(
+                      e.target.value,
+                    );
+                    setMatricule(formattedMatricule);
                     setStudentProfile(null);
-                    setIsSearchingStudent(digits.length === MATRICULE_LENGTH);
+                    setIsSearchingStudent(
+                      MATRICULE_PATTERN.test(formattedMatricule),
+                    );
                     setPeriod("");
                     setPassword("");
                     setIsPeriodMenuOpen(false);
@@ -275,7 +336,7 @@ export default function Login() {
                   }}
                   onFocus={() => setMobileFocusField("matricule")}
                   onBlur={() => setMobileFocusField(null)}
-                  placeholder="Ex. 260001"
+                  placeholder="Ex. ABC-1234"
                 />
                 {isSearchingStudent && (
                   <span
@@ -304,7 +365,7 @@ export default function Login() {
                   ? "Recherche du dossier élève…"
                   : studentProfile
                     ? "Dossier élève retrouvé"
-                    : `${matricule.length}/${MATRICULE_LENGTH} chiffres`}
+                    : "Format attendu : ABC-1234"}
               </p>
             </div>
 
@@ -581,8 +642,16 @@ export default function Login() {
                       value={password}
                       ref={passwordInputRef}
                       autoComplete="current-password"
+                      autoCapitalize="characters"
+                      maxLength={11}
+                      spellCheck={false}
                       onChange={(e) => {
-                        setPassword(e.target.value);
+                        setPassword(
+                          e.target.value
+                            .toUpperCase()
+                            .replace(/\s/g, "")
+                            .slice(0, 11),
+                        );
                         setErrorMsg(null);
                       }}
                       onFocus={() => setMobileFocusField("password")}
@@ -634,7 +703,13 @@ export default function Login() {
       </section>
       {isPageTransitioning && (
         <LogoLoader
-          onComplete={() => navigate(ROUTES.DASHBOARD)}
+          onComplete={() =>
+            navigate(
+              `${ROUTES.DASHBOARD}?period=${encodeURIComponent(
+                selectedPeriod?.code ?? "",
+              )}`,
+            )
+          }
           duration={2000}
           transparent
           label="Connexion..."

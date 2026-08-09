@@ -29,8 +29,8 @@ export const getStudentLoginValidationError = ({
   isSearchingStudent: boolean;
   isStudentResolved: boolean;
 }): string | null => {
-  if (!/^\d{6}$/.test(matricule)) {
-    return "Le matricule doit contenir exactement 6 chiffres.";
+  if (!/^[A-Z]{3}-\d{4}$/.test(matricule)) {
+    return "Le matricule doit respecter le format ABC-1234.";
   }
 
   if (isSearchingStudent) {

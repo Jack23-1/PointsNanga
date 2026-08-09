@@ -28,6 +28,19 @@ model DeletionRequest {
   @@map("deletion_requests")
 }
 
+model GradeSubmission {
+  id          String   @id @default(uuid())
+  titularId  BigInt   @map("titular_id")
+  periodId   BigInt   @map("period_id")
+  status     String   @default("SUBMITTED")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([titularId, periodId])
+  @@index([status, submittedAt])
+  @@map("grade_submissions")
+}
+
 model SuperAdmin {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -349,6 +362,8 @@ model resultats {
   pourcentage       Decimal            @default(0) @db.Decimal(6, 2)
   moyenne           Decimal?           @db.Decimal(6, 2)
   rang              Int?
+  conduite          String?            @db.VarChar(20)
+  application       String?            @db.VarChar(20)
   mention           mention_resultat?
   decision          decision_resultat?
   statut            statut_resultat    @default(BROUILLON)

@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsArray,
+  ArrayMaxSize,
   IsDateString,
   IsEmail,
   IsIn,
@@ -203,6 +204,14 @@ export class CreateStudentDto {
 
 export class UpdateStudentDto extends CreateStudentDto {}
 
+export class ImportStudentsDto {
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => CreateStudentDto)
+  students: CreateStudentDto[];
+}
+
 export class DeleteStudentDto {
   @IsString()
   @IsNotEmpty()
@@ -258,6 +267,13 @@ export class ResetHomeroomPasswordDto {
   password: string;
 }
 
+export class ResetSchoolPasswordDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password: string;
+}
+
 export class HomeroomGradeDto {
   @IsInt()
   @Min(1)
@@ -272,6 +288,20 @@ export class HomeroomGradeDto {
   value: number;
 }
 
+export class HomeroomResultAppreciationDto {
+  @IsInt()
+  @Min(1)
+  enrollmentId: number;
+
+  @IsOptional()
+  @IsIn(["bonne", "mauvaise", "mediocre", "excellente"])
+  conduite?: string;
+
+  @IsOptional()
+  @IsIn(["bonne", "mauvaise", "mediocre", "excellente"])
+  application?: string;
+}
+
 export class SaveHomeroomGradesDto {
   @IsOptional()
   @IsInt()
@@ -282,6 +312,12 @@ export class SaveHomeroomGradesDto {
   @ValidateNested({ each: true })
   @Type(() => HomeroomGradeDto)
   grades: HomeroomGradeDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HomeroomResultAppreciationDto)
+  appreciations?: HomeroomResultAppreciationDto[];
 }
 
 export class CreateSchoolYearDto {
@@ -328,6 +364,11 @@ export class ReviewDeletionRequestDto {
   @IsString()
   @MaxLength(500)
   comment?: string;
+}
+
+export class ToggleResultVisibilityDto {
+  @IsBoolean()
+  isVisible: boolean;
 }
 
 export class AssignStudentDto {

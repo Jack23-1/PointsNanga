@@ -10,7 +10,7 @@ import {
   DeleteOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
-import { getLoginRouteForRole, ROUTES } from "../../config/constants";
+import { API_URL, getLoginRouteForRole, ROUTES } from "../../config/constants";
 import { api } from "../../lib/api";
 
 const { Header: AntHeader } = Layout;
@@ -28,8 +28,12 @@ const Header: React.FC = () => {
     createdAt: string;
   }>>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [gradeSubmissions, setGradeSubmissions] = useState<Array<{
+    id: string; className: string; teacherName: string; periodName: string; submittedAt: string; status: string;
+  }>>([]);
   const isDirector = user?.role === "director";
   const isSuperAdmin = user?.role === "super_admin";
+  const isStudent = user?.role === "student";
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -47,6 +51,26 @@ const Header: React.FC = () => {
     const interval = window.setInterval(() => void loadNotifications(), 30000);
     return () => { active = false; window.clearInterval(interval); };
   }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (!isDirector) return;
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await api.get<typeof gradeSubmissions>("/grade-submissions");
+        if (active) setGradeSubmissions(response.data.filter((item) => item.status === "SUBMITTED"));
+      } catch { if (active) setGradeSubmissions([]); }
+    };
+    void load();
+    const events = new EventSource(`${API_URL}/grade-submissions/events`, {
+      withCredentials: true,
+    });
+    events.onmessage = () => {
+      void load();
+      window.dispatchEvent(new Event("grade-submissions-updated"));
+    };
+    return () => { active = false; events.close(); };
+  }, [isDirector]);
   const schoolName = isDirector
     ? user?.lastName || "Votre établissement"
     : "";
@@ -111,6 +135,32 @@ const Header: React.FC = () => {
     </div>
   );
 
+  const gradeSubmissionPanel = (
+    <div className="admin-notifications">
+      <div className="admin-notifications__heading"><strong>Cotes reçues</strong><span>{gradeSubmissions.length}</span></div>
+      <div className="admin-notifications__list">
+        {gradeSubmissions.length ? gradeSubmissions.map((item) => (
+          <div className="admin-notifications__item" key={item.id}>
+            <span className="admin-notifications__icon"><BellFilled /></span>
+            <span className="admin-notifications__copy">
+              <strong>{item.className} · {item.periodName}</strong>
+              <span>{item.teacherName} a validé les cotes</span>
+              <small>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.submittedAt))}</small>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => navigate(ROUTES.GRADE_APPROVALS)}
+              >
+                Voir et approuver
+              </Button>
+            </span>
+            <i aria-label="Notification" />
+          </div>
+        )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Aucun envoi de cotes" />}
+      </div>
+    </div>
+  );
+
   return (
     <AntHeader
       style={{
@@ -123,7 +173,7 @@ const Header: React.FC = () => {
         marginLeft: 0,
         transition: "margin-left 0.2s",
       }}
-      className={`responsive-header${isDirector ? " director-header" : ""}`}
+      className={`responsive-header${isDirector ? " director-header" : ""}${isStudent ? " student-header" : ""}`}
     >
       {isDirector ? (
         <div className="director-header__content">
@@ -147,8 +197,14 @@ const Header: React.FC = () => {
               <small>Tableau de bord directeur</small>
             </div>
           </div>
-          <Dropdown menu={{ items: menuItems }} placement="bottomRight">
-            <button type="button" className="director-header__account">
+          <Space size={14}>
+            <Popover content={gradeSubmissionPanel} trigger="click" placement="bottomRight" arrow={false} overlayClassName="admin-notifications-popover">
+              <Badge count={gradeSubmissions.length} size="small" overflowCount={99}>
+                <button type="button" className="admin-notifications__bell" aria-label="Cotes validées"><BellFilled /></button>
+              </Badge>
+            </Popover>
+            <Dropdown menu={{ items: menuItems }} placement="bottomRight">
+              <button type="button" className="director-header__account">
               <Avatar
                 className="director-header__avatar"
                 icon={<UserOutlined />}
@@ -160,8 +216,9 @@ const Header: React.FC = () => {
                 <small>{user?.email}</small>
               </span>
               <DownOutlined className="director-header__chevron" />
-            </button>
-          </Dropdown>
+              </button>
+            </Dropdown>
+          </Space>
         </div>
       ) : (
         <Space size={14}>
@@ -176,7 +233,7 @@ const Header: React.FC = () => {
           )}
           <Dropdown menu={{ items: menuItems }} placement="bottomRight">
             <Space style={{ cursor: "pointer" }}>
-              <Avatar icon={<UserOutlined />} />
+              {!isStudent && <Avatar icon={<UserOutlined />} />}
               <Text className="hide-on-mobile">{user?.email}</Text>
             </Space>
           </Dropdown>

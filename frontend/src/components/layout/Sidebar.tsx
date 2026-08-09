@@ -13,6 +13,7 @@ import {
   ReadOutlined,
   LogoutOutlined,
   CalendarOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
 import { ROUTES } from "../../config/constants";
@@ -153,6 +154,12 @@ const Sidebar: React.FC = () => {
           icon: <CalendarOutlined />,
           label: "Années scolaires",
           onClick: () => handleNavigation(ROUTES.SCHOOL_YEARS),
+        },
+        {
+          key: ROUTES.GRADE_APPROVALS,
+          icon: <AuditOutlined />,
+          label: "Cotes et approbation",
+          onClick: () => handleNavigation(ROUTES.GRADE_APPROVALS),
         },
         {
           key: ROUTES.COURSE_ASSIGNMENTS,

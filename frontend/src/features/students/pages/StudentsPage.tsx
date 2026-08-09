@@ -43,6 +43,7 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   return typeof responseMessage === "string" ? responseMessage : fallback;
 };
 import { api } from "../../../lib/api";
+import StudentImportModal from "../components/StudentImportModal";
 
 interface StudentRow {
   id: string;
@@ -115,6 +116,7 @@ const StudentsPage = () => {
   const [search, setSearch] = useState("");
   const [selectedClass, setSelectedClass] = useState("Toutes les classes");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRow | null>(null);
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [batchSize, setBatchSize] = useState(1);
@@ -485,6 +487,12 @@ const StudentsPage = () => {
         </div>
         <div className="students-directory__hero-action">
           <Button
+            icon={<UploadOutlined />}
+            onClick={() => setIsImportOpen(true)}
+          >
+            Importer Excel / CSV
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={openCreateModal}
@@ -494,6 +502,25 @@ const StudentsPage = () => {
           </Button>
         </div>
       </header>
+
+      <StudentImportModal
+        open={isImportOpen}
+        classes={classes}
+        schoolYears={schoolYears}
+        onClose={() => setIsImportOpen(false)}
+        onImported={() => loadStudents()}
+      />
+
+      <div className="students-directory__student-password" role="note">
+        <span className="students-directory__student-password-icon">
+          <LockOutlined aria-hidden="true" />
+        </span>
+        <div>
+          <span>Mot de passe commun des élèves</span>
+          <small>À utiliser pour consulter leurs résultats</small>
+        </div>
+        <code>POINTSNANGA</code>
+      </div>
 
       <Row gutter={[14, 14]} className="students-directory__summary">
         <Col xs={12} md={6}>

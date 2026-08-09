@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AcademicService } from "../academic/academic.service";
-import { CreateSchoolDto, UpdateSchoolDto } from "../academic/dto/academic.dto";
+import { CreateSchoolDto, ResetSchoolPasswordDto, UpdateSchoolDto } from "../academic/dto/academic.dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PrimarySuperAdminGuard } from "../auth/primary-superadmin.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -36,8 +36,8 @@ export class SchoolsController {
   @Post(":id/reset-password")
   @UseGuards(JwtAuthGuard, RolesGuard, PrimarySuperAdminGuard)
   @Roles("super_admin")
-  resetPassword(@Param("id") id: string) {
-    return this.academicService.resetSchoolPassword(id);
+  resetPassword(@Param("id") id: string, @Body() dto: ResetSchoolPasswordDto) {
+    return this.academicService.resetSchoolPassword(id, dto.password);
   }
 
   @Delete(":id")

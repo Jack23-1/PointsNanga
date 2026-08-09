@@ -13,6 +13,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const persistUser = (userData: User) => {
+  try {
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('last_role', userData.role);
+  } catch {
+    // The authenticated session remains usable when browser storage is blocked.
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,9 +63,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (credentials: LoginCredentials) => {
     const response = await api.post<AuthResponse>('/auth/login', credentials);
     const { user: userData } = response.data;
-    
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('last_role', userData.role);
+
+    persistUser(userData);
     setUser(userData);
   };
 
@@ -68,8 +76,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateUser = (userData: User) => {
     setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-    localStorage.setItem('last_role', userData.role);
+    persistUser(userData);
   };
 
   const value: AuthContextType = {

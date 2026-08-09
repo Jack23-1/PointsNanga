@@ -2,6 +2,7 @@ import React from "react";
 import { Layout } from "antd";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import { useAuth } from "../../hooks/useAuth";
 
 const { Content } = Layout;
 
@@ -10,9 +11,15 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
+  const { user } = useAuth();
+  const isStudentSpace = user?.role === "student";
+
   return (
-    <Layout style={{ minHeight: "100vh" }} className="main-layout">
-      <Sidebar />
+    <Layout
+      style={{ minHeight: "100vh" }}
+      className={`main-layout${isStudentSpace ? " main-layout--student" : ""}`}
+    >
+      {!isStudentSpace && <Sidebar />}
       <Layout>
         <Header />
         <Content className="main-layout-content">

@@ -5,6 +5,30 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import * as cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
+const isLocalFrontendOrigin = (origin: string) => {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" || !["5173", "5174"].includes(url.port)) {
+      return false;
+    }
+
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host.endsWith(".local") ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      /^fe80:/i.test(host)
+    );
+  } catch {
+    return false;
+  }
+};
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useBodyParser("json", { limit: "5mb" });
@@ -25,7 +49,7 @@ async function bootstrap() {
       origin: string | undefined,
       callback: (error: Error | null, allow?: boolean) => void,
     ) => {
-      if (!origin || allowedOrigins.has(origin)) {
+      if (!origin || allowedOrigins.has(origin) || isLocalFrontendOrigin(origin)) {
         callback(null, true);
         return;
       }

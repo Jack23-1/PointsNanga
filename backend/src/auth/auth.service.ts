@@ -8,6 +8,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { normalizeStudentMatricule } from "../students/student-matricule";
 import { LoginDto } from "./dto/login.dto";
 
+const STUDENT_RESULTS_PASSWORD = "POINTSNANGA";
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -327,9 +329,7 @@ export class AuthService {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 
-    if (
-      student.matricule !== normalizeStudentMatricule(loginDto.password)
-    ) {
+    if (loginDto.password !== STUDENT_RESULTS_PASSWORD) {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 

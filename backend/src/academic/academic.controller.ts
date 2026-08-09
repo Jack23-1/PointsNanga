@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, Sse, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Roles } from "../auth/roles.decorator";
 import { RolesGuard } from "../auth/roles.guard";
@@ -12,6 +12,7 @@ import {
   CreateOptionDto,
   CreateSchoolYearDto,
   CreateStudentDto,
+  ImportStudentsDto,
   CreateTeacherDto,
   DeleteStudentDto,
   SaveHomeroomGradesDto,
@@ -22,6 +23,7 @@ import {
   UpdateStudentDto,
   UpdateTeacherDto,
   ToggleSchoolPeriodDto,
+  ToggleResultVisibilityDto,
   ReviewDeletionRequestDto,
   ResetHomeroomPasswordDto,
   ReplaceCourseTeacherDto,
@@ -70,6 +72,47 @@ export class AcademicController {
     );
   }
 
+  @Get("grades/admin/summary")
+  @Roles("super_admin")
+  adminGradeSummary() {
+    return this.academicService.getAdminGradeSummary();
+  }
+
+  @Get("grades/admin/students")
+  @Roles("super_admin")
+  adminGradeStudents() {
+    return this.academicService.getAdminGradeStudents();
+  }
+
+  @Patch("grades/admin/students/:enrollmentId/periods/:periodId")
+  @Roles("super_admin")
+  setStudentResultVisibility(
+    @Param("enrollmentId") enrollmentId: string,
+    @Param("periodId") periodId: string,
+    @Body() dto: ToggleResultVisibilityDto,
+  ) {
+    return this.academicService.setStudentResultVisibility(enrollmentId, periodId, dto.isVisible);
+  }
+
+  @Get("results/student")
+  @Roles("student")
+  studentResult(
+    @Req()
+    request: {
+      user?: { sub?: string | number; schoolId?: string | number };
+    },
+    @Query("period") period?: string,
+  ) {
+    if (!request.user?.sub || !request.user.schoolId) {
+      throw new ForbiddenException("Session élève invalide.");
+    }
+    return this.academicService.getStudentResult(
+      String(request.user.sub),
+      String(request.user.schoolId),
+      period ?? "",
+    );
+  }
+
   @Patch("grades/homeroom")
   @Roles("teacher")
   saveHomeroomGrades(
@@ -78,6 +121,63 @@ export class AcademicController {
   ) {
     if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
     return this.academicService.saveHomeroomGrades(String(request.user.sub), dto);
+  }
+
+  @Post("grades/homeroom/submit")
+  @Roles("teacher")
+  submitHomeroomGrades(
+    @Req() request: { user?: { sub?: string | number } },
+    @Body() dto: { periodId?: string | number },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.submitHomeroomGrades(String(request.user.sub), String(dto.periodId ?? ""));
+  }
+
+  @Get("grade-submissions")
+  @Roles("director")
+  directorGradeSubmissions(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listGradeSubmissions(String(request.user.schoolId));
+  }
+
+  @Sse("grade-submissions/events")
+  @Roles("director")
+  gradeSubmissionEvents(
+    @Req() request: { user?: { schoolId?: string | number } },
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.streamGradeSubmissionEvents(String(request.user.schoolId));
+  }
+
+  @Sse("grade-submissions/homeroom/events")
+  @Roles("teacher")
+  homeroomGradeSubmissionEvents(
+    @Req() request: { user?: { sub?: string | number } },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.streamHomeroomGradeSubmissionEvents(String(request.user.sub));
+  }
+
+  @Patch("grade-submissions/:id/reopen")
+  @Roles("director")
+  reopenGradeSubmission(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.reopenGradeSubmission(id, String(request.user.schoolId));
+  }
+
+  @Patch("grade-submissions/:id/approve")
+  @Roles("director")
+  approveGradeSubmission(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.approveGradeSubmission(id, String(request.user.schoolId));
   }
 
   @Get("options")
@@ -335,6 +435,16 @@ export class AcademicController {
       throw new ForbiddenException("École obligatoire.");
     }
     return this.academicService.createStudent(dto, String(schoolId));
+  }
+
+  @Post("students/import")
+  @Roles("director")
+  importStudents(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: ImportStudentsDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.importStudents(dto.students, String(request.user.schoolId));
   }
 
   @Patch("students/:id")
