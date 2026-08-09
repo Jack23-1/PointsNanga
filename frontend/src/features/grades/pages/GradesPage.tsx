@@ -931,6 +931,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                           disabled={!canEdit}
                           options={appreciationOptions}
                           placeholder="-"
+                          popupMatchSelectWidth={132}
                           size="small"
                           value={appreciations[student.id]?.conduite ?? undefined}
                           onChange={(value) =>
@@ -944,6 +945,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                           disabled={!canEdit}
                           options={appreciationOptions}
                           placeholder="-"
+                          popupMatchSelectWidth={132}
                           size="small"
                           value={appreciations[student.id]?.application ?? undefined}
                           onChange={(value) =>

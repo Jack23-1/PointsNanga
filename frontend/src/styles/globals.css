@@ -6027,7 +6027,7 @@ code {
 .gradebook__sheet table {
   position: relative;
   width: max-content;
-  min-width: 100%;
+  min-width: max-content;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -6160,6 +6160,29 @@ code {
   line-height: 1;
   font-family: inherit;
 }
+
+.gradebook__sheet--rotate-90 thead th:not(.gradebook__student-column):not(.gradebook__choice-column):not(.gradebook__result-column),
+.gradebook__sheet--rotate-90 tbody td:not(.gradebook__choice-cell):not(.gradebook__summary-cell):not(.gradebook__meta-cell) {
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+}
+
+.gradebook__sheet--rotate-90 thead .gradebook__choice-column,
+.gradebook__sheet--rotate-90 .gradebook__choice-cell {
+  width: 108px;
+  min-width: 108px;
+  max-width: 108px;
+}
+
+.gradebook__sheet--rotate-90 thead .gradebook__result-column:not(.gradebook__choice-column),
+.gradebook__sheet--rotate-90 .gradebook__summary-cell,
+.gradebook__sheet--rotate-90 .gradebook__meta-cell {
+  width: 78px;
+  min-width: 78px;
+  max-width: 78px;
+}
+
 .gradebook__sheet .gradebook__student-column {
   left: 0;
   width: 320px;
@@ -6670,8 +6693,9 @@ code {
 .gradebook__choice-cell .ant-select-selection-placeholder {
   padding-inline-end: 12px !important;
   overflow: hidden;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 48px !important;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 .gradebook__choice-cell .ant-select-arrow,
