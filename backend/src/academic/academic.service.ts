@@ -1540,6 +1540,30 @@ export class AcademicService {
     }
   }
 
+  async updateSchoolStatus(id: string, isActive: boolean) {
+    await this.ensureSchool(id);
+    const updatedSchool = await this.prisma.ecoles.update({
+      where: { id_ecole: toBigInt(id) },
+      data: {
+        statut: statusFromBoolean(isActive),
+      },
+    });
+
+    return {
+      id: updatedSchool.id_ecole.toString(),
+      name: updatedSchool.nom_ecole,
+      code: updatedSchool.code_ecole,
+      establishmentCode: updatedSchool.code_etablissement,
+      address: updatedSchool.adresse,
+      city: updatedSchool.ville,
+      phone: updatedSchool.telephone,
+      logo: updatedSchool.logo,
+      isActive: updatedSchool.statut === "ACTIF",
+      createdAt: updatedSchool.date_creation.toISOString(),
+      updatedAt: updatedSchool.date_mise_a_jour.toISOString(),
+    };
+  }
+
   async resetSchoolPassword(id: string, password: string) {
     await this.ensureSchool(id);
 
@@ -2799,6 +2823,11 @@ export class AcademicService {
       where: { id_annee_scolaire, id_ecole },
     });
     if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.statut === "ARCHIVEE") {
+      throw new BadRequestException(
+        "Une année archivée ne peut plus être rouverte.",
+      );
+    }
     await this.prisma.$transaction([
       this.prisma.periodes.updateMany({
         where: {
@@ -2836,6 +2865,9 @@ export class AcademicService {
       where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
     });
     if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.statut === "ARCHIVEE") {
+      throw new BadRequestException("Cette année est déjà archivée.");
+    }
     await this.prisma.$transaction([
       this.prisma.annees_scolaires.update({
         where: { id_annee_scolaire },
@@ -2849,12 +2881,70 @@ export class AcademicService {
     return { closed: true };
   }
 
+  async archiveSchoolYear(id: string, schoolId: string) {
+    const id_annee_scolaire = toBigInt(id);
+    const year = await this.prisma.annees_scolaires.findFirst({
+      where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
+      include: {
+        periodes: true,
+        _count: {
+          select: {
+            inscriptions: true,
+            cours_classes: true,
+            titulaires: true,
+          },
+        },
+      },
+    });
+    if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.est_active || year.statut === "EN_COURS") {
+      throw new BadRequestException(
+        "Clôturez d’abord cette année scolaire avant de l’archiver.",
+      );
+    }
+    if (year.statut === "PLANIFIEE") {
+      throw new BadRequestException(
+        "Une année planifiée ne peut pas être archivée.",
+      );
+    }
+    if (year.statut === "ARCHIVEE") {
+      return { archived: true, alreadyArchived: true };
+    }
+    const openPeriods = year.periodes.filter((period) => period.est_ouverte);
+    if (openPeriods.length > 0) {
+      throw new BadRequestException(
+        "Fermez toutes les périodes avant d’archiver cette année.",
+      );
+    }
+
+    await this.prisma.annees_scolaires.update({
+      where: { id_annee_scolaire },
+      data: {
+        est_active: false,
+        statut: "ARCHIVEE",
+        date_mise_a_jour: new Date(),
+      },
+    });
+
+    return {
+      archived: true,
+      students: year._count.inscriptions,
+      courses: year._count.cours_classes,
+      homerooms: year._count.titulaires,
+    };
+  }
+
   async updateSchoolYear(id: string, schoolId: string, dto: UpdateSchoolYearDto) {
     const id_annee_scolaire = toBigInt(id);
     const year = await this.prisma.annees_scolaires.findFirst({
       where: { id_annee_scolaire, id_ecole: toBigInt(schoolId) },
     });
     if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.statut === "ARCHIVEE") {
+      throw new BadRequestException(
+        "Une année archivée est consultable uniquement.",
+      );
+    }
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
     if (endDate < startDate) {
@@ -2895,6 +2985,11 @@ export class AcademicService {
     if (!year) throw new NotFoundException("Année scolaire introuvable.");
     if (year.est_active) {
       throw new BadRequestException("L’année active ne peut pas être supprimée.");
+    }
+    if (year.statut === "ARCHIVEE") {
+      throw new BadRequestException(
+        "Une année archivée ne peut pas être supprimée depuis la bibliothèque.",
+      );
     }
     const summary = {
       inscriptions: year._count.inscriptions,
@@ -3047,6 +3142,11 @@ export class AcademicService {
       },
     });
     if (!year) throw new NotFoundException("Année scolaire introuvable.");
+    if (year.statut === "ARCHIVEE") {
+      throw new BadRequestException(
+        "Une année archivée est consultable uniquement.",
+      );
+    }
     const period = await this.prisma.periodes.findFirst({
       where: { id_periode, id_annee_scolaire, statut: "ACTIF" },
     });
@@ -3061,6 +3161,227 @@ export class AcademicService {
       data: { est_ouverte: isOpen, date_mise_a_jour: new Date() },
     });
     return { updated: true };
+  }
+
+  async getAcademicLibrary(
+    schoolId: string,
+    filters: {
+      yearId?: string;
+      classId?: string;
+      periodId?: string;
+      search?: string;
+    },
+  ) {
+    const id_ecole = toBigInt(schoolId);
+    const archivedYears = await this.prisma.annees_scolaires.findMany({
+      where: { id_ecole, statut: "ARCHIVEE" },
+      include: {
+        periodes: { orderBy: { numero: "asc" } },
+        _count: {
+          select: {
+            inscriptions: true,
+            cours_classes: true,
+            titulaires: true,
+          },
+        },
+      },
+      orderBy: { date_debut: "desc" },
+    });
+
+    const selectedYear =
+      archivedYears.find(
+        (year) => year.id_annee_scolaire.toString() === filters.yearId,
+      ) ?? archivedYears[0];
+
+    if (!selectedYear) {
+      return {
+        summary: {
+          archivedYears: 0,
+          students: 0,
+          classes: 0,
+          bulletins: 0,
+        },
+        selectedYearId: null,
+        selectedClassId: null,
+        selectedPeriodId: null,
+        years: [],
+        classes: [],
+        periods: [],
+        courses: [],
+        students: [],
+        grades: [],
+      };
+    }
+
+    const id_annee_scolaire = selectedYear.id_annee_scolaire;
+    const classes = await this.prisma.classes.findMany({
+      where: {
+        id_ecole,
+        OR: [
+          { inscriptions: { some: { id_annee_scolaire } } },
+          { cours_classes: { some: { id_annee_scolaire } } },
+        ],
+      },
+      select: {
+        id_classe: true,
+        libelle: true,
+        inscriptions: {
+          where: { id_annee_scolaire },
+          select: { id_inscription: true },
+        },
+      },
+      orderBy: { libelle: "asc" },
+    });
+
+    const selectedClass =
+      classes.find((schoolClass) => schoolClass.id_classe.toString() === filters.classId) ??
+      classes[0];
+    const selectedPeriod =
+      selectedYear.periodes.find(
+        (period) => period.id_periode.toString() === filters.periodId,
+      ) ?? selectedYear.periodes[0];
+    const normalizedSearch = clean(filters.search);
+
+    const students = selectedClass
+      ? await this.prisma.inscriptions.findMany({
+          where: {
+            id_annee_scolaire,
+            id_classe: selectedClass.id_classe,
+            ...(normalizedSearch
+              ? {
+                  eleves: {
+                    OR: [
+                      { matricule: { contains: normalizedSearch, mode: "insensitive" } },
+                      { nom: { contains: normalizedSearch, mode: "insensitive" } },
+                      { postnom: { contains: normalizedSearch, mode: "insensitive" } },
+                      { prenom: { contains: normalizedSearch, mode: "insensitive" } },
+                    ],
+                  },
+                }
+              : {}),
+          },
+          include: {
+            classes: true,
+            eleves: true,
+            resultats: selectedPeriod
+              ? {
+                  where: { id_periode: selectedPeriod.id_periode },
+                }
+              : false,
+          },
+          orderBy: [{ numero_ordre: "asc" }, { eleves: { nom: "asc" } }],
+        })
+      : [];
+
+    const courses = selectedClass
+      ? await this.prisma.cours_classes.findMany({
+          where: {
+            id_annee_scolaire,
+            id_classe: selectedClass.id_classe,
+          },
+          include: {
+            cours: true,
+            affectations_professeurs: {
+              where: { id_annee_scolaire },
+              include: { professeurs: true },
+              orderBy: { date_affectation: "desc" },
+            },
+          },
+          orderBy: { cours: { libelle: "asc" } },
+        })
+      : [];
+
+    const enrollmentIds = students.map((student) => student.id_inscription);
+    const courseClassIds = courses.map((course) => course.id_cours_classe);
+    const grades =
+      selectedPeriod && enrollmentIds.length && courseClassIds.length
+        ? await this.prisma.cotes.findMany({
+            where: {
+              id_periode: selectedPeriod.id_periode,
+              id_inscription: { in: enrollmentIds },
+              id_cours_classe: { in: courseClassIds },
+            },
+            select: {
+              id_inscription: true,
+              id_cours_classe: true,
+              cote_obtenue: true,
+            },
+          })
+        : [];
+
+    const bulletins = selectedPeriod
+      ? await this.prisma.resultats.count({
+          where: {
+            id_periode: selectedPeriod.id_periode,
+            inscriptions: { id_annee_scolaire },
+          },
+        })
+      : 0;
+
+    return {
+      summary: {
+        archivedYears: archivedYears.length,
+        students: selectedYear._count.inscriptions,
+        classes: classes.length,
+        bulletins,
+      },
+      selectedYearId: selectedYear.id_annee_scolaire.toString(),
+      selectedClassId: selectedClass?.id_classe.toString() ?? null,
+      selectedPeriodId: selectedPeriod?.id_periode.toString() ?? null,
+      years: archivedYears.map((year) => ({
+        id: year.id_annee_scolaire.toString(),
+        label: year.libelle,
+        startDate: year.date_debut.toISOString(),
+        endDate: year.date_fin.toISOString(),
+        students: year._count.inscriptions,
+        courses: year._count.cours_classes,
+        homerooms: year._count.titulaires,
+        periods: year.periodes.length,
+      })),
+      classes: classes.map((schoolClass) => ({
+        id: schoolClass.id_classe.toString(),
+        name: schoolClass.libelle,
+        students: schoolClass.inscriptions.length,
+      })),
+      periods: selectedYear.periodes.map((period) => ({
+        id: period.id_periode.toString(),
+        name: period.libelle,
+        number: period.numero,
+      })),
+      courses: courses.map((course) => {
+        const teacher = course.affectations_professeurs[0]?.professeurs;
+        return {
+          id: course.id_cours_classe.toString(),
+          name: course.cours.libelle,
+          weight: Number(course.ponderation),
+          teacherName: teacher
+            ? `${teacher.nom}${teacher.postnom ? ` ${teacher.postnom}` : ""} ${teacher.prenom}`
+            : "—",
+        };
+      }),
+      students: students.map((student) => {
+        const result = student.resultats[0];
+        return {
+          enrollmentId: student.id_inscription.toString(),
+          orderNumber: student.numero_ordre,
+          matricule: student.eleves.matricule,
+          name: `${student.eleves.nom}${student.eleves.postnom ? ` ${student.eleves.postnom}` : ""} ${student.eleves.prenom}`,
+          className: student.classes.libelle,
+          photo: student.eleves.photo,
+          totalObtained: result ? Number(result.total_obtenu) : 0,
+          totalWeight: result ? Number(result.total_ponderation) : 0,
+          percentage: result ? Number(result.pourcentage) : 0,
+          rank: result?.rang ?? null,
+          conduite: result?.conduite ?? null,
+          application: result?.application ?? null,
+        };
+      }),
+      grades: grades.map((grade) => ({
+        enrollmentId: grade.id_inscription.toString(),
+        courseClassId: grade.id_cours_classe.toString(),
+        value: Number(grade.cote_obtenue),
+      })),
+    };
   }
 
   async assignStudent(dto: AssignStudentDto) {

@@ -39,6 +39,7 @@ import {
   TrophyOutlined,
   UserOutlined,
   UserSwitchOutlined,
+  StopOutlined,
   WarningFilled,
 } from "@ant-design/icons";
 import { ROUTES } from "../../../config/constants";
@@ -65,6 +66,7 @@ type School = {
   teachers: number;
   joined: string;
   status: "active" | "suspended";
+  isActive: boolean;
   initials: string;
   logo?: string | null;
 };
@@ -175,6 +177,7 @@ const mapSchoolFromApi = (school: SchoolApiRecord): School => ({
     year: "numeric",
   }).format(new Date(school.createdAt)),
   status: school.isActive ? "active" : "suspended",
+  isActive: school.isActive,
   initials: getInitials(school.name),
   logo: school.logo,
 });
@@ -266,6 +269,50 @@ const SuperAdminDashboard = () => {
         record.classId,
     )?.classId;
   }, [gradeClassFilter, gradeManagementRecords, gradeSchoolFilter]);
+  const renderSchoolOption = (option: { value?: unknown; label?: unknown }) => {
+    const school = schools.find((item) => item.name === option.value);
+    const isSuspended = Boolean(school && !school.isActive);
+    return (
+      <div
+        className={`super-admin-dashboard__school-filter-option${
+          isSuspended ? " is-suspended" : ""
+        }`}
+      >
+        <span className="super-admin-dashboard__school-filter-logo">
+          {school?.logo ? (
+            <img src={school.logo} alt="" />
+          ) : (
+            school?.initials ?? "ÉC"
+          )}
+        </span>
+        <span>
+          <strong>{school?.name ?? String(option.label)}</strong>
+          <small>
+            {isSuspended
+              ? "École suspendue"
+              : school?.address && school.address !== "—"
+                ? school.address
+                : "Établissement autorisé"}
+          </small>
+        </span>
+        {isSuspended && <StopOutlined aria-hidden="true" />}
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    if (selectedAcademicSchool && !selectedAcademicSchool.isActive) {
+      setAcademicSchoolFilter(undefined);
+    }
+
+    if (selectedGradeSchool && !selectedGradeSchool.isActive) {
+      setGradeSchoolFilter(undefined);
+      setGradeClassFilter(undefined);
+      setGradePeriodFilter(undefined);
+      localStorage.removeItem("superadmin_grade_period");
+      localStorage.removeItem("superadmin_grade_school");
+    }
+  }, [selectedAcademicSchool, selectedGradeSchool]);
 
   useEffect(() => {
     const requestedWorkspace = new URLSearchParams(location.search).get(
@@ -1211,27 +1258,9 @@ const SuperAdminDashboard = () => {
             options={schools.map((school) => ({
               label: school.name,
               value: school.name,
+              disabled: !school.isActive,
             }))}
-            optionRender={(option) => {
-              const school = schools.find(
-                (item) => item.name === option.value,
-              );
-              return (
-                <div className="super-admin-dashboard__school-filter-option">
-                  <span className="super-admin-dashboard__school-filter-logo">
-                    {school?.logo ? (
-                      <img src={school.logo} alt="" />
-                    ) : (
-                      school?.initials ?? "ÉC"
-                    )}
-                  </span>
-                  <span>
-                    <strong>{school?.name ?? String(option.label)}</strong>
-                    <small>{school?.address ?? "Établissement autorisé"}</small>
-                  </span>
-                </div>
-              );
-            }}
+            optionRender={renderSchoolOption}
           />
           <Select
             placeholder="Période"
@@ -1340,31 +1369,12 @@ const SuperAdminDashboard = () => {
               localStorage.removeItem("superadmin_grade_period");
               localStorage.removeItem("superadmin_grade_school");
             }}
-            options={schools.map((school) => ({ label: school.name, value: school.name }))}
-            optionRender={(option) => {
-              const school = schools.find(
-                (item) => item.name === option.value,
-              );
-              return (
-                <div className="super-admin-dashboard__school-filter-option">
-                  <span className="super-admin-dashboard__school-filter-logo">
-                    {school?.logo ? (
-                      <img src={school.logo} alt="" />
-                    ) : (
-                      school?.initials ?? "ÉC"
-                    )}
-                  </span>
-                  <span>
-                    <strong>{school?.name ?? String(option.label)}</strong>
-                    <small>
-                      {school?.address && school.address !== "—"
-                        ? school.address
-                        : "Établissement autorisé"}
-                    </small>
-                  </span>
-                </div>
-              );
-            }}
+            options={schools.map((school) => ({
+              label: school.name,
+              value: school.name,
+              disabled: !school.isActive,
+            }))}
+            optionRender={renderSchoolOption}
           />
           <Select
             className="super-admin-dashboard__grade-filter"

@@ -21,7 +21,8 @@ CREATE TYPE statut_general AS ENUM (
 CREATE TYPE statut_annee_scolaire AS ENUM (
     'PLANIFIEE',
     'EN_COURS',
-    'CLOTUREE'
+    'CLOTUREE',
+    'ARCHIVEE'
 );
 
 CREATE TYPE statut_compte AS ENUM (

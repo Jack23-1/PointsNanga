@@ -1,0 +1,1 @@
+ALTER TYPE "statut_annee_scolaire" ADD VALUE IF NOT EXISTS 'ARCHIVEE';

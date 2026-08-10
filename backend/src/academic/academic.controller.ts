@@ -573,6 +573,32 @@ export class AcademicController {
     return this.academicService.closeSchoolYear(id, String(request.user.schoolId));
   }
 
+  @Patch("school-years/:id/archive")
+  @Roles("director")
+  archiveSchoolYear(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.archiveSchoolYear(id, String(request.user.schoolId));
+  }
+
+  @Get("academic-library")
+  @Roles("director")
+  academicLibrary(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Query("yearId") yearId?: string,
+    @Query("classId") classId?: string,
+    @Query("periodId") periodId?: string,
+    @Query("search") search?: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.getAcademicLibrary(
+      String(request.user.schoolId),
+      { yearId, classId, periodId, search },
+    );
+  }
+
   @Patch("school-years/:id")
   updateSchoolYear(
     @Req() request: { user?: { schoolId?: string | number } },

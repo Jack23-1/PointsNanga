@@ -424,6 +424,7 @@ enum statut_annee_scolaire {
   PLANIFIEE
   EN_COURS
   CLOTUREE
+  ARCHIVEE
 }
 
 enum statut_compte {

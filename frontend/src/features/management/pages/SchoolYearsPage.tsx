@@ -3,6 +3,7 @@ import {
   CalendarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
   LockOutlined,
@@ -23,7 +24,7 @@ interface SchoolYear {
   startDate: string;
   endDate: string;
   isActive: boolean;
-  status: "PLANIFIEE" | "EN_COURS" | "CLOTUREE";
+  status: "PLANIFIEE" | "EN_COURS" | "CLOTUREE" | "ARCHIVEE";
   students: number;
   courses: number;
   homerooms: number;
@@ -210,6 +211,29 @@ const SchoolYearsPage = () => {
     });
   };
 
+  const archiveYear = (year: SchoolYear) => {
+    Modal.confirm({
+      centered: true,
+      className: "school-years__confirm-modal",
+      icon: <DatabaseOutlined />,
+      title: `Archiver ${year.label} ?`,
+      content:
+        "Cette année deviendra une archive consultable dans la bibliothèque académique. Elle ne pourra plus être modifiée.",
+      okText: "Archiver l’année",
+      cancelText: "Annuler",
+      async onOk() {
+        try {
+          await api.patch(`/school-years/${year.id}/archive`);
+          message.success(`${year.label} est maintenant archivée.`);
+          await load();
+        } catch (error) {
+          message.error(getError(error));
+          throw error;
+        }
+      },
+    });
+  };
+
   const togglePeriod = async (periodId: string, isOpen: boolean) => {
     if (!periodYear) return;
     setPeriodSavingId(periodId);
@@ -270,7 +294,13 @@ const SchoolYearsPage = () => {
             <div className="school-years__card-top">
               <div className="school-years__calendar"><CalendarOutlined /></div>
               <Tag className={`school-years__status school-years__status--${year.status.toLowerCase()}`}>
-                {year.status === "EN_COURS" ? "En cours" : year.status === "CLOTUREE" ? "Clôturée" : "Planifiée"}
+                {year.status === "EN_COURS"
+                  ? "En cours"
+                  : year.status === "CLOTUREE"
+                    ? "Clôturée"
+                    : year.status === "ARCHIVEE"
+                      ? "Archivée"
+                      : "Planifiée"}
               </Tag>
             </div>
             <h3>{year.label}</h3>
@@ -284,9 +314,11 @@ const SchoolYearsPage = () => {
               <Button icon={<CalendarOutlined />} onClick={() => setPeriodYear(year)}>
                 Périodes
               </Button>
-              <Button type="text" icon={<EditOutlined />} onClick={() => editYear(year)}>
-                Modifier
-              </Button>
+              {year.status !== "ARCHIVEE" && (
+                <Button type="text" icon={<EditOutlined />} onClick={() => editYear(year)}>
+                  Modifier
+                </Button>
+              )}
               {year.status === "PLANIFIEE" && (
                 <Button type="primary" icon={<ClockCircleOutlined />} onClick={() => activate(year)}>Activer</Button>
               )}
@@ -294,11 +326,16 @@ const SchoolYearsPage = () => {
                 <Button danger icon={<LockOutlined />} onClick={() => closeYear(year)}>Clôturer</Button>
               )}
               {year.status === "CLOTUREE" && (
-                <Button icon={<UnlockOutlined />} onClick={() => activate(year)}>
-                  Rouvrir
-                </Button>
+                <>
+                  <Button icon={<UnlockOutlined />} onClick={() => activate(year)}>
+                    Rouvrir
+                  </Button>
+                  <Button icon={<DatabaseOutlined />} onClick={() => archiveYear(year)}>
+                    Archiver
+                  </Button>
+                </>
               )}
-              {!year.isActive && (
+              {!year.isActive && year.status !== "ARCHIVEE" && (
                 <Button danger type="text" icon={<DeleteOutlined />} onClick={() => deleteYear(year)}>
                   Supprimer
                 </Button>

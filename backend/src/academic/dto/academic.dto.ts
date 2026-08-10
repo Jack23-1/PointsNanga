@@ -54,6 +54,11 @@ export class CreateSchoolDto {
 
 export class UpdateSchoolDto extends CreateSchoolDto {}
 
+export class UpdateSchoolStatusDto {
+  @IsBoolean()
+  isActive: boolean;
+}
+
 export class CreateOptionDto {
   @IsInt()
   @Min(1)

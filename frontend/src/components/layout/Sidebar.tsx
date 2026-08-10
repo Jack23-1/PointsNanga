@@ -5,6 +5,7 @@ import { MenuOutlined } from "@ant-design/icons";
 import {
   DashboardOutlined,
   BankOutlined,
+  DatabaseOutlined,
   UserOutlined,
   BookOutlined,
   FileTextOutlined,
@@ -166,6 +167,12 @@ const Sidebar: React.FC = () => {
           icon: <AuditOutlined />,
           label: "Cotes et approbations",
           onClick: () => handleNavigation(ROUTES.GRADE_APPROVALS),
+        },
+        {
+          key: ROUTES.ACADEMIC_LIBRARY,
+          icon: <DatabaseOutlined />,
+          label: "Bibliothèque académique",
+          onClick: () => handleNavigation(ROUTES.ACADEMIC_LIBRARY),
         },
         {
           key: "logout",

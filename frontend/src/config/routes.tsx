@@ -15,6 +15,7 @@ import GradesPage from "../features/grades/pages/GradesPage";
 import StudentsPage from "../features/students/pages/StudentsPage";
 import AcademicDirectoryPage from "../features/management/pages/AcademicDirectoryPage";
 import SchoolYearsPage from "../features/management/pages/SchoolYearsPage";
+import AcademicLibraryPage from "../features/management/pages/AcademicLibraryPage";
 import DeletionRequestsPage from "../features/management/pages/DeletionRequestsPage";
 import GradeApprovalsPage from "../features/management/pages/GradeApprovalsPage";
 import { useAuth } from "../hooks/useAuth";
@@ -176,6 +177,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute allowedRoles={["director"]}>
         <SchoolYearsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.ACADEMIC_LIBRARY,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <AcademicLibraryPage />
       </ProtectedRoute>
     ),
   },

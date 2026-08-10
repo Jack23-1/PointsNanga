@@ -233,6 +233,9 @@ export class AuthService {
     if (!director || director.statut_compte !== "ACTIF") {
       throw new UnauthorizedException("Identifiants invalides.");
     }
+    if (director.ecoles.statut !== "ACTIF") {
+      throw new UnauthorizedException("Cette école est suspendue.");
+    }
 
     const passwordMatches = await bcrypt.compare(
       loginDto.password,
@@ -270,11 +273,14 @@ export class AuthService {
         code_connexion: loginDto.matricule.trim(),
         professeurs: { ecoles: { nom_ecole: loginDto.schoolName } },
       },
-      include: { professeurs: true, classes: true },
+      include: { professeurs: { include: { ecoles: true } }, classes: true },
     });
 
     if (!titulaire || titulaire.statut_compte !== "ACTIF") {
       throw new UnauthorizedException("Identifiants invalides.");
+    }
+    if (titulaire.professeurs.ecoles.statut !== "ACTIF") {
+      throw new UnauthorizedException("Cette école est suspendue.");
     }
 
     const passwordMatches = await bcrypt.compare(
@@ -318,6 +324,7 @@ export class AuthService {
           : {}),
       },
       include: {
+        ecoles: true,
         inscriptions: {
           orderBy: { date_inscription: "desc" },
           take: 1,
@@ -327,6 +334,9 @@ export class AuthService {
 
     if (!student || student.statut !== "ACTIF") {
       throw new UnauthorizedException("Identifiants invalides.");
+    }
+    if (student.ecoles.statut !== "ACTIF") {
+      throw new UnauthorizedException("Cette école est suspendue.");
     }
 
     if (loginDto.password !== STUDENT_RESULTS_PASSWORD) {

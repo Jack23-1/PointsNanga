@@ -10,6 +10,7 @@ import {
   KeyOutlined,
   PlusOutlined,
   SearchOutlined,
+  StopOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import {
@@ -23,7 +24,9 @@ import {
   Modal,
   Row,
   Statistic,
+  Switch,
   Table,
+  Tag,
   Typography,
   Upload,
   message,
@@ -57,6 +60,9 @@ const SchoolsPage = () => {
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [schoolToDelete, setSchoolToDelete] = useState<School | null>(null);
   const [schoolToReset, setSchoolToReset] = useState<School | null>(null);
+  const [statusChangingSchoolId, setStatusChangingSchoolId] = useState<
+    string | null
+  >(null);
   const [createdCredentials, setCreatedCredentials] =
     useState<CreatedSchoolCredentials | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -138,6 +144,7 @@ const SchoolsPage = () => {
       address: school.address,
       city: school.city,
       phone: school.phone,
+      isActive: school.isActive,
     });
     setLogoData(school.logo ?? undefined);
     setIsDrawerOpen(true);
@@ -151,7 +158,7 @@ const SchoolsPage = () => {
       city: values.city,
       phone: values.phone,
       logo: logoData,
-      isActive: true,
+      isActive: editingSchool ? values.isActive !== false : true,
     };
 
     setIsSaving(true);
@@ -242,6 +249,45 @@ const SchoolsPage = () => {
     }
   };
 
+  const toggleSchoolStatus = (school: School) => {
+    const willActivate = !school.isActive;
+    Modal.confirm({
+      title: willActivate ? "Réouvrir cette école ?" : "Suspendre cette école ?",
+      content: willActivate
+        ? `${school.name} pourra de nouveau accéder à ses données et ses utilisateurs pourront se connecter.`
+        : `${school.name} n’aura plus accès à ses données et ses utilisateurs seront bloqués.`,
+      okText: willActivate ? "Réouvrir" : "Suspendre",
+      cancelText: "Annuler",
+      centered: true,
+      okButtonProps: willActivate ? undefined : { danger: true },
+      onOk: async () => {
+        setStatusChangingSchoolId(school.id);
+        try {
+          const response = await api.patch<School>(
+            `/schools/${school.id}/status`,
+            {
+              isActive: willActivate,
+            },
+          );
+          setSchools((currentSchools) =>
+            currentSchools.map((item) =>
+              item.id === school.id ? { ...item, ...response.data } : item,
+            ),
+          );
+          message.success(
+            willActivate
+              ? "École réouverte avec succès."
+              : "École suspendue avec succès.",
+          );
+        } catch {
+          message.error("Impossible de modifier le statut de cette école.");
+        } finally {
+          setStatusChangingSchoolId(null);
+        }
+      },
+    });
+  };
+
   const columns: ColumnsType<School> = [
     {
       title: "École",
@@ -268,6 +314,16 @@ const SchoolsPage = () => {
       responsive: ["md"],
     },
     {
+      title: "Statut",
+      key: "status",
+      responsive: ["md"],
+      render: (_, school) => (
+        <Tag color={school.isActive ? "green" : "red"}>
+          {school.isActive ? "Active" : "Suspendue"}
+        </Tag>
+      ),
+    },
+    {
       title: "Identifiants",
       key: "credentials",
       responsive: ["lg"],
@@ -284,6 +340,22 @@ const SchoolsPage = () => {
       align: "right",
       render: (_, school) => (
         <div className="schools-page__actions">
+          <Button
+            type="text"
+            danger={school.isActive}
+            shape="circle"
+            loading={statusChangingSchoolId === school.id}
+            aria-label={
+              school.isActive
+                ? `Suspendre ${school.name}`
+                : `Réouvrir ${school.name}`
+            }
+            title={school.isActive ? "Suspendre l’école" : "Réouvrir l’école"}
+            icon={
+              school.isActive ? <StopOutlined /> : <CheckCircleOutlined />
+            }
+            onClick={() => toggleSchoolStatus(school)}
+          />
           <Button
             type="text"
             shape="circle"
@@ -469,6 +541,19 @@ const SchoolsPage = () => {
             >
               <Input placeholder="Ex. +243 000 000 000" />
             </Form.Item>
+            {editingSchool && (
+              <Form.Item
+                label="Statut de l’école"
+                name="isActive"
+                valuePropName="checked"
+                extra="Si l’école est suspendue, la direction, les titulaires et les élèves n’auront plus accès aux données de cette école."
+              >
+                <Switch
+                  checkedChildren="Active"
+                  unCheckedChildren="Suspendue"
+                />
+              </Form.Item>
+            )}
             <Form.Item label="Logo de l’école (facultatif)">
               <Upload
                 accept="image/*"

@@ -10,6 +10,7 @@ import {
   MailOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import { ROUTES } from "../../../config/constants";
 import { useAuth } from "../../../hooks/useAuth";
@@ -31,6 +32,7 @@ type SchoolOption = {
   id: string;
   name: string;
   logo?: string | null;
+  isActive: boolean;
 };
 
 export default function DirectorLogin() {
@@ -274,7 +276,7 @@ export default function DirectorLogin() {
                               event.preventDefault();
                               schoolPickerRef.current
                                 ?.querySelector<HTMLButtonElement>(
-                                  ".premium-login__director-school-option",
+                                  ".premium-login__director-school-option:not(:disabled)",
                                 )
                                 ?.focus();
                             }
@@ -291,36 +293,41 @@ export default function DirectorLogin() {
                         role="listbox"
                         aria-label="Liste des établissements"
                       >
-                      {filteredDirectorSchools.map((school, index) => (
+                      {filteredDirectorSchools.map((school) => (
                         <button
                           key={school.id}
                           type="button"
                           role="option"
+                          disabled={!school.isActive}
                           aria-selected={schoolName === school.name}
                           className={`premium-login__director-school-option${
                             schoolName === school.name ? " is-selected" : ""
-                          }`}
+                          }${!school.isActive ? " is-suspended" : ""}`}
                           onKeyDown={(event) => {
                             const options =
                               schoolPickerRef.current?.querySelectorAll<HTMLButtonElement>(
-                                ".premium-login__director-school-option",
+                                ".premium-login__director-school-option:not(:disabled)",
                               );
                             if (!options?.length) return;
+                            const currentIndex = Array.from(options).indexOf(
+                              event.currentTarget,
+                            );
 
                             if (event.key === "ArrowDown") {
                               event.preventDefault();
-                              options[(index + 1) % options.length]?.focus();
+                              options[(currentIndex + 1) % options.length]?.focus();
                             }
                             if (event.key === "ArrowUp") {
                               event.preventDefault();
-                              if (index === 0) {
+                              if (currentIndex <= 0) {
                                 schoolSearchRef.current?.focus();
                               } else {
-                                options[index - 1]?.focus();
+                                options[currentIndex - 1]?.focus();
                               }
                             }
                           }}
                           onClick={() => {
+                            if (!school.isActive) return;
                             setSchoolName(school.name);
                             setIsSchoolMenuOpen(false);
                             schoolTriggerRef.current?.focus();
@@ -344,9 +351,15 @@ export default function DirectorLogin() {
                           </span>
                           <span>
                             <strong>{school.name}</strong>
-                            <small>Établissement autorisé</small>
+                            <small>
+                              {school.isActive
+                                ? "Établissement autorisé"
+                                : "École suspendue"}
+                            </small>
                           </span>
-                          {schoolName === school.name && (
+                          {!school.isActive ? (
+                            <StopOutlined aria-hidden="true" />
+                          ) : schoolName === school.name && (
                             <CheckOutlined aria-hidden="true" />
                           )}
                         </button>
