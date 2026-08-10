@@ -85,6 +85,8 @@ type AcademicRecord = {
 
 type GradeManagementRecord = {
   key: string;
+  schoolId: string;
+  classId: string | null;
   matricule: string;
   lastName: string;
   postName: string;
@@ -214,6 +216,9 @@ const SuperAdminDashboard = () => {
   });
   const [gradeSearch, setGradeSearch] = useState("");
   const [gradeManagementRecords, setGradeManagementRecords] = useState<GradeManagementRecord[]>([]);
+  const [bulkVisibilityScope, setBulkVisibilityScope] = useState<
+    "school" | "class" | null
+  >(null);
   const [gradeSummary, setGradeSummary] = useState({
     totalStudents: 0,
     activeStudents: 0,
@@ -249,6 +254,18 @@ const SuperAdminDashboard = () => {
   const selectedGradePeriodIsOpen = Boolean(
     gradePeriods.find((period) => period.id === gradePeriodFilter)?.isOpen,
   );
+  const selectedGradePeriodName =
+    gradePeriods.find((period) => period.id === gradePeriodFilter)?.name ??
+    "la période sélectionnée";
+  const selectedGradeClassId = useMemo(() => {
+    if (!gradeSchoolFilter || !gradeClassFilter) return undefined;
+    return gradeManagementRecords.find(
+      (record) =>
+        record.school === gradeSchoolFilter &&
+        record.className === gradeClassFilter &&
+        record.classId,
+    )?.classId;
+  }, [gradeClassFilter, gradeManagementRecords, gradeSchoolFilter]);
 
   useEffect(() => {
     const requestedWorkspace = new URLSearchParams(location.search).get(
@@ -316,6 +333,8 @@ const SuperAdminDashboard = () => {
     try {
       const response = await api.get<Array<{
         id: string;
+        schoolId: string;
+        classId: string | null;
         matricule: string;
         lastName: string;
         postName: string;
@@ -577,6 +596,125 @@ const SuperAdminDashboard = () => {
       );
     });
   }, [gradeClassFilter, gradePeriodFilter, gradeSchoolFilter, gradeSearch, gradeManagementRecords]);
+
+  const bulkSchoolRecords = useMemo(() => {
+    if (!selectedGradeSchool || !gradePeriodFilter) return [];
+    return gradeManagementRecords.filter(
+      (record) =>
+        record.schoolId === selectedGradeSchool.key &&
+        Boolean(record.enrollmentId) &&
+        record.periods.some((period) => period.id === gradePeriodFilter),
+    );
+  }, [gradeManagementRecords, gradePeriodFilter, selectedGradeSchool]);
+
+  const bulkClassRecords = useMemo(() => {
+    if (!selectedGradeClassId || !gradePeriodFilter) return [];
+    return bulkSchoolRecords.filter(
+      (record) => record.classId === selectedGradeClassId,
+    );
+  }, [bulkSchoolRecords, gradePeriodFilter, selectedGradeClassId]);
+
+  const updateLocalBulkVisibility = (
+    records: GradeManagementRecord[],
+    periodId: string,
+    isVisible: boolean,
+  ) => {
+    const recordKeys = new Set(records.map((record) => record.key));
+    setGradeManagementRecords((current) =>
+      current.map((record) => {
+        if (!recordKeys.has(record.key)) return record;
+        const periodStatuses = {
+          ...record.periodStatuses,
+          [periodId]: isVisible,
+        };
+        return {
+          ...record,
+          periodStatuses,
+          isValidated: Object.values(periodStatuses).some(Boolean),
+        };
+      }),
+    );
+  };
+
+  const setBulkResultVisibility = async (
+    scope: "school" | "class",
+    isVisible: boolean,
+  ) => {
+    if (!gradePeriodFilter || !selectedGradeSchool) {
+      message.warning("Sélectionnez une école et une période.");
+      return;
+    }
+    if (isVisible && !selectedGradePeriodIsOpen) {
+      message.warning("Cette période est fermée. Ouvrez-la d’abord.");
+      return;
+    }
+    if (scope === "class" && !selectedGradeClassId) {
+      message.warning("Sélectionnez une classe.");
+      return;
+    }
+
+    const targetRecords = scope === "class" ? bulkClassRecords : bulkSchoolRecords;
+    if (targetRecords.length === 0) {
+      message.warning("Aucun élève à mettre à jour pour cette sélection.");
+      return;
+    }
+
+    setBulkVisibilityScope(scope);
+    try {
+      const response = await api.patch<{
+        isVisible: boolean;
+        affectedCount: number;
+      }>(`/grades/admin/periods/${gradePeriodFilter}/visibility`, {
+        isVisible,
+        schoolId: selectedGradeSchool.key,
+        ...(scope === "class" && selectedGradeClassId
+          ? { classId: selectedGradeClassId }
+          : {}),
+      });
+      updateLocalBulkVisibility(targetRecords, gradePeriodFilter, isVisible);
+      message.success(
+        `${response.data.affectedCount} élève${response.data.affectedCount > 1 ? "s" : ""} mis à jour.`,
+      );
+    } catch {
+      message.error("Impossible d’appliquer l’action groupée.");
+    } finally {
+      setBulkVisibilityScope(null);
+    }
+  };
+
+  const confirmBulkResultVisibility = (scope: "school" | "class") => {
+    const targetRecords = scope === "class" ? bulkClassRecords : bulkSchoolRecords;
+    const scopeLabel =
+      scope === "class"
+        ? `la classe ${gradeClassFilter}`
+        : `toute l’école ${gradeSchoolFilter}`;
+
+    if (!gradePeriodFilter || !selectedGradeSchool) {
+      message.warning("Sélectionnez d’abord une école et une période.");
+      return;
+    }
+    if (!selectedGradePeriodIsOpen) {
+      message.warning("Cette période est fermée. Ouvrez-la d’abord.");
+      return;
+    }
+    if (scope === "class" && !selectedGradeClassId) {
+      message.warning("Sélectionnez une classe.");
+      return;
+    }
+    if (targetRecords.length === 0) {
+      message.warning("Aucun élève à cocher pour cette sélection.");
+      return;
+    }
+
+    Modal.confirm({
+      title: "Confirmer la publication groupée",
+      content: `Vous allez cocher le statut de ${targetRecords.length} élève${targetRecords.length > 1 ? "s" : ""} pour ${scopeLabel}, période : ${selectedGradePeriodName}.`,
+      okText: "Cocher maintenant",
+      cancelText: "Annuler",
+      centered: true,
+      onOk: () => setBulkResultVisibility(scope, true),
+    });
+  };
 
   const schoolColumns: ColumnsType<School> = [
     {
@@ -1269,6 +1407,54 @@ const SuperAdminDashboard = () => {
               disabled: !period.isOpen,
             }))}
           />
+          <Tooltip
+            title={
+              selectedGradePeriodIsOpen
+                ? "Cocher tous les élèves de l’école sélectionnée"
+                : "Sélectionnez une période ouverte"
+            }
+          >
+            <span>
+              <Button
+                icon={<CheckCircleFilled />}
+                disabled={
+                  !selectedGradeSchool ||
+                  !gradePeriodFilter ||
+                  !selectedGradePeriodIsOpen ||
+                  bulkSchoolRecords.length === 0
+                }
+                loading={bulkVisibilityScope === "school"}
+                onClick={() => confirmBulkResultVisibility("school")}
+              >
+                Cocher toute l’école
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip
+            title={
+              selectedGradePeriodIsOpen
+                ? "Cocher tous les élèves de la classe sélectionnée"
+                : "Sélectionnez une période ouverte"
+            }
+          >
+            <span>
+              <Button
+                icon={<CheckCircleFilled />}
+                disabled={
+                  !selectedGradeSchool ||
+                  !gradeClassFilter ||
+                  !selectedGradeClassId ||
+                  !gradePeriodFilter ||
+                  !selectedGradePeriodIsOpen ||
+                  bulkClassRecords.length === 0
+                }
+                loading={bulkVisibilityScope === "class"}
+                onClick={() => confirmBulkResultVisibility("class")}
+              >
+                Cocher cette classe
+              </Button>
+            </span>
+          </Tooltip>
         </div>
         <Table
           columns={gradeManagementColumns}

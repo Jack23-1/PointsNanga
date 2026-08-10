@@ -67,6 +67,15 @@ interface FormValues {
   weight?: number;
 }
 
+interface BulkFormValues {
+  items: Array<{
+    name?: string;
+    firstName?: string;
+    gender?: string;
+    phone?: string;
+  }>;
+}
+
 interface ResetPasswordValues {
   password: string;
   confirmation: string;
@@ -166,6 +175,7 @@ const errorMessage = (error: unknown, fallback: string) => {
 const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const content = contentByKind[kind];
   const [form] = Form.useForm<FormValues>();
+  const [bulkForm] = Form.useForm<BulkFormValues>();
   const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
   const [replacementForm] = Form.useForm<ReplacementValues>();
   const [rows, setRows] = useState<DirectoryRow[]>([]);
@@ -180,9 +190,12 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<DirectoryRow | null>(null);
   const selectedClassId = Form.useWatch("classId", form);
+  const supportsBulkCreate = ["classes", "teachers", "courses"].includes(kind);
 
   const loadData = async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -349,7 +362,55 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     setEditingRow(null);
     setPhoto(null);
     form.resetFields();
+    if (supportsBulkCreate) {
+      bulkForm.resetFields();
+      bulkForm.setFieldsValue({ items: [{}] });
+      setIsBulkModalOpen(true);
+      return;
+    }
     setIsModalOpen(true);
+  };
+
+  const saveBulk = async () => {
+    const values = await bulkForm.validateFields();
+    const items = (values.items ?? []).filter((item) =>
+      Object.values(item ?? {}).some((value) => String(value ?? "").trim()),
+    );
+    if (items.length === 0) {
+      message.warning("Ajoutez au moins une ligne.");
+      return;
+    }
+    setIsBulkSaving(true);
+    try {
+      if (kind === "classes") {
+        await api.post("/classes/bulk", {
+          classes: items.map((item) => ({ label: item.name })),
+        });
+      } else if (kind === "courses") {
+        await api.post("/courses/bulk", {
+          courses: items.map((item) => ({ label: item.name })),
+        });
+      } else if (kind === "teachers") {
+        await api.post("/teachers/bulk", {
+          teachers: items.map((item) => ({
+            lastName: item.name,
+            firstName: item.firstName,
+            gender: item.gender,
+            phone: item.phone,
+          })),
+        });
+      } else {
+        return;
+      }
+      await loadData();
+      setIsBulkModalOpen(false);
+      bulkForm.resetFields();
+      message.success(`${items.length} élément${items.length > 1 ? "s" : ""} ajouté${items.length > 1 ? "s" : ""}.`);
+    } catch (error) {
+      message.error(errorMessage(error, "Ajout multiple impossible."));
+    } finally {
+      setIsBulkSaving(false);
+    }
   };
 
   const openEdit = (row: DirectoryRow) => {
@@ -1115,6 +1176,145 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
               </Col>
             </Row>
           )}
+        </Form>
+      </Modal>
+
+      <Modal
+        width={620}
+        title={
+          <div className="academic-directory__modal-title">
+            <span>{content.icon}</span>
+            <div>
+              <strong>Ajout multiple</strong>
+              <small>
+                {kind === "teachers"
+                  ? "Ajoutez un ou plusieurs professeurs"
+                  : kind === "courses"
+                    ? "Ajoutez un ou plusieurs cours"
+                    : "Ajoutez une ou plusieurs classes"}
+              </small>
+            </div>
+          </div>
+        }
+        open={isBulkModalOpen}
+        onCancel={() => {
+          setIsBulkModalOpen(false);
+          bulkForm.resetFields();
+        }}
+        onOk={saveBulk}
+        confirmLoading={isBulkSaving}
+        okText="Enregistrer"
+        cancelText="Annuler"
+        className="academic-directory__modal"
+      >
+        <Form
+          form={bulkForm}
+          layout="vertical"
+          className="academic-directory__form academic-directory__form--simple"
+        >
+          <Form.List name="items" initialValue={[{}]}>
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((field, index) => (
+                  <Card
+                    key={field.key}
+                    size="small"
+                    className="academic-directory__bulk-card"
+                    title={`${kind === "teachers" ? "Professeur" : kind === "courses" ? "Cours" : "Classe"} ${index + 1}`}
+                    extra={
+                      fields.length > 1 ? (
+                        <Button
+                          danger
+                          type="text"
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(field.name)}
+                        >
+                          Retirer
+                        </Button>
+                      ) : null
+                    }
+                  >
+                    {kind === "teachers" ? (
+                      <>
+                        <Row gutter={14}>
+                          <Col span={12}>
+                            <Form.Item
+                              name={[field.name, "name"]}
+                              label="Nom"
+                              normalize={(value: string) =>
+                                value?.toLocaleUpperCase("fr")
+                              }
+                              rules={[{ required: true, message: "Champ requis." }]}
+                            >
+                              <Input prefix={<UserOutlined />} placeholder="NOM" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item
+                              name={[field.name, "firstName"]}
+                              label="Prénom"
+                              rules={[{ required: true, message: "Champ requis." }]}
+                            >
+                              <Input prefix={<UserOutlined />} placeholder="Prénom" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                        <Row gutter={14}>
+                          <Col span={12}>
+                            <Form.Item
+                              name={[field.name, "gender"]}
+                              label="Sexe"
+                              rules={[{ required: true, message: "Champ requis." }]}
+                            >
+                              <Select
+                                options={[
+                                  { value: "M", label: "Homme" },
+                                  { value: "F", label: "Femme" },
+                                ]}
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item
+                              name={[field.name, "phone"]}
+                              label="Contact (facultatif)"
+                            >
+                              <Input prefix={<PhoneOutlined />} placeholder="+243..." />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      </>
+                    ) : (
+                      <Form.Item
+                        name={[field.name, "name"]}
+                        label={kind === "courses" ? "Intitulé du cours" : "Nom de la classe"}
+                        rules={[{ required: true, message: "Champ requis." }]}
+                      >
+                        <Input
+                          autoFocus={index === 0}
+                          prefix={kind === "courses" ? <BookOutlined /> : <TeamOutlined />}
+                          placeholder={kind === "courses" ? "Mathématiques" : "6ème A"}
+                        />
+                      </Form.Item>
+                    )}
+                  </Card>
+                ))}
+                <Button
+                  type="dashed"
+                  block
+                  icon={<PlusOutlined />}
+                  onClick={() => add({})}
+                >
+                  Ajouter une autre ligne
+                </Button>
+              </>
+            )}
+          </Form.List>
+          <p className="academic-directory__bulk-help">
+            Remplissez plusieurs fiches avec le même format que l’ajout simple,
+            puis enregistrez tout en une seule fois.
+          </p>
         </Form>
       </Modal>
     </section>

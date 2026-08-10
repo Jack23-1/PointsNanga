@@ -120,10 +120,10 @@ const Sidebar: React.FC = () => {
           onClick: () => handleNavigation(ROUTES.DASHBOARD),
         },
         {
-          key: ROUTES.STUDENTS,
-          icon: <UserOutlined />,
-          label: "Élèves",
-          onClick: () => handleNavigation(ROUTES.STUDENTS),
+          key: ROUTES.SCHOOL_YEARS,
+          icon: <CalendarOutlined />,
+          label: "Années scolaires",
+          onClick: () => handleNavigation(ROUTES.SCHOOL_YEARS),
         },
         {
           key: ROUTES.CLASSES,
@@ -132,10 +132,10 @@ const Sidebar: React.FC = () => {
           onClick: () => handleNavigation(ROUTES.CLASSES),
         },
         {
-          key: ROUTES.TEACHERS,
+          key: ROUTES.STUDENTS,
           icon: <UserOutlined />,
-          label: "Professeurs",
-          onClick: () => handleNavigation(ROUTES.TEACHERS),
+          label: "Élèves",
+          onClick: () => handleNavigation(ROUTES.STUDENTS),
         },
         {
           key: ROUTES.COURSES,
@@ -144,28 +144,28 @@ const Sidebar: React.FC = () => {
           onClick: () => handleNavigation(ROUTES.COURSES),
         },
         {
-          key: ROUTES.HOMEROOM_TEACHERS,
-          icon: <TeamOutlined />,
-          label: "Gestion des titulaires",
-          onClick: () => handleNavigation(ROUTES.HOMEROOM_TEACHERS),
-        },
-        {
-          key: ROUTES.SCHOOL_YEARS,
-          icon: <CalendarOutlined />,
-          label: "Années scolaires",
-          onClick: () => handleNavigation(ROUTES.SCHOOL_YEARS),
-        },
-        {
-          key: ROUTES.GRADE_APPROVALS,
-          icon: <AuditOutlined />,
-          label: "Cotes et approbation",
-          onClick: () => handleNavigation(ROUTES.GRADE_APPROVALS),
+          key: ROUTES.TEACHERS,
+          icon: <UserOutlined />,
+          label: "Professeurs",
+          onClick: () => handleNavigation(ROUTES.TEACHERS),
         },
         {
           key: ROUTES.COURSE_ASSIGNMENTS,
           icon: <BookOutlined />,
           label: "Attributions cours",
           onClick: () => handleNavigation(ROUTES.COURSE_ASSIGNMENTS),
+        },
+        {
+          key: ROUTES.HOMEROOM_TEACHERS,
+          icon: <TeamOutlined />,
+          label: "Gestion titulaires",
+          onClick: () => handleNavigation(ROUTES.HOMEROOM_TEACHERS),
+        },
+        {
+          key: ROUTES.GRADE_APPROVALS,
+          icon: <AuditOutlined />,
+          label: "Cotes et approbations",
+          onClick: () => handleNavigation(ROUTES.GRADE_APPROVALS),
         },
         {
           key: "logout",

@@ -5,6 +5,9 @@ import { RolesGuard } from "../auth/roles.guard";
 import { AcademicService } from "./academic.service";
 import {
   AssignStudentDto,
+  BulkCreateClassesDto,
+  BulkCreateCoursesDto,
+  BulkCreateTeachersDto,
   CreateClassDto,
   CreateCourseDto,
   CreateCourseAssignmentDto,
@@ -12,6 +15,7 @@ import {
   CreateOptionDto,
   CreateSchoolYearDto,
   CreateStudentDto,
+  BulkToggleResultVisibilityDto,
   ImportStudentsDto,
   CreateTeacherDto,
   DeleteStudentDto,
@@ -92,6 +96,15 @@ export class AcademicController {
     @Body() dto: ToggleResultVisibilityDto,
   ) {
     return this.academicService.setStudentResultVisibility(enrollmentId, periodId, dto.isVisible);
+  }
+
+  @Patch("grades/admin/periods/:periodId/visibility")
+  @Roles("super_admin")
+  setBulkResultVisibility(
+    @Param("periodId") periodId: string,
+    @Body() dto: BulkToggleResultVisibilityDto,
+  ) {
+    return this.academicService.setBulkResultVisibility(periodId, dto);
   }
 
   @Get("results/student")
@@ -234,6 +247,21 @@ export class AcademicController {
     return this.academicService.createClass(dto, String(schoolId));
   }
 
+  @Post("classes/bulk")
+  createClasses(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: BulkCreateClassesDto,
+  ) {
+    const schoolId =
+      request.user?.role === "director"
+        ? request.user.schoolId
+        : dto.classes?.[0]?.schoolId;
+    if (!schoolId) {
+      throw new ForbiddenException("École obligatoire.");
+    }
+    return this.academicService.createClasses(dto, String(schoolId));
+  }
+
   @Patch("classes/:id")
   updateClass(
     @Req() request: { user?: { schoolId?: string | number } },
@@ -277,6 +305,16 @@ export class AcademicController {
     return this.academicService.createTeacher(dto, String(schoolId));
   }
 
+  @Post("teachers/bulk")
+  createTeachers(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: BulkCreateTeachersDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.teachers?.[0]?.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createTeachers(dto, String(schoolId));
+  }
+
   @Patch("teachers/:id")
   updateTeacher(@Param("id") id: string, @Body() dto: UpdateTeacherDto) {
     return this.academicService.updateTeacher(id, dto);
@@ -307,6 +345,16 @@ export class AcademicController {
     const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
     if (!schoolId) throw new ForbiddenException("École obligatoire.");
     return this.academicService.createCourse(dto, String(schoolId));
+  }
+
+  @Post("courses/bulk")
+  createCourses(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: BulkCreateCoursesDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.courses?.[0]?.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createCourses(dto, String(schoolId));
   }
 
   @Patch("courses/:id")

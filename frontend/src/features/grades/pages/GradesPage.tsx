@@ -597,6 +597,14 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     "--gradebook-header-height": `${courseHeaderHeight}px`,
     "--gradebook-title-width": `${courseHeaderHeight - 40}px`,
   } as CSSProperties;
+  const getColumnRevealStyle = (index: number) =>
+    ({
+      "--gradebook-column-delay": `${Math.min(index, 22) * 24}ms`,
+    }) as CSSProperties;
+  const getRowRevealStyle = (index: number) =>
+    ({
+      "--gradebook-row-delay": `${Math.min(index, 18) * 34}ms`,
+    }) as CSSProperties;
 
   return (
     <section className="gradebook">
@@ -731,7 +739,10 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
             <table>
               <thead>
                 <tr>
-                  <th className="gradebook__student-column">
+                  <th
+                    className="gradebook__student-column"
+                    style={getColumnRevealStyle(0)}
+                  >
                     <div className="gradebook__corner-logo">
                       {schoolLogo ? (
                         <img src={schoolLogo} alt="Logo de l’école" />
@@ -741,8 +752,12 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                       <span>Élèves</span>
                     </div>
                   </th>
-                  {data.courses.map((course) => (
-                    <th key={course.id} className="gradebook__course-column">
+                  {data.courses.map((course, columnIndex) => (
+                    <th
+                      key={course.id}
+                      className="gradebook__course-column"
+                      style={getColumnRevealStyle(columnIndex + 1)}
+                    >
                       <Tooltip
                         placement="right"
                         mouseEnterDelay={0.1}
@@ -766,33 +781,48 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                       </Tooltip>
                     </th>
                   ))}
-                  <th className="gradebook__result-column gradebook__choice-column">
+                  <th
+                    className="gradebook__result-column gradebook__choice-column"
+                    style={getColumnRevealStyle(data.courses.length + 1)}
+                  >
                     <div className="gradebook__course-title">
                       <strong className="gradebook__course-name">
                         Conduite
                       </strong>
                     </div>
                   </th>
-                  <th className="gradebook__result-column gradebook__choice-column">
+                  <th
+                    className="gradebook__result-column gradebook__choice-column"
+                    style={getColumnRevealStyle(data.courses.length + 2)}
+                  >
                     <div className="gradebook__course-title">
                       <strong className="gradebook__course-name">
                         Application
                       </strong>
                     </div>
                   </th>
-                  <th className="gradebook__result-column">
+                  <th
+                    className="gradebook__result-column"
+                    style={getColumnRevealStyle(data.courses.length + 3)}
+                  >
                     <div className="gradebook__course-title">
                       <strong className="gradebook__course-name">Place</strong>
                     </div>
                   </th>
-                  <th className="gradebook__result-column">
+                  <th
+                    className="gradebook__result-column"
+                    style={getColumnRevealStyle(data.courses.length + 4)}
+                  >
                     <div className="gradebook__course-title">
                       <strong className="gradebook__course-name">
                         Total général
                       </strong>
                     </div>
                   </th>
-                  <th className="gradebook__result-column">
+                  <th
+                    className="gradebook__result-column"
+                    style={getColumnRevealStyle(data.courses.length + 5)}
+                  >
                     <div className="gradebook__course-title">
                       <strong className="gradebook__course-name">
                         Pourcentage
@@ -838,7 +868,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                   };
                   const summaryPassed = summary.percentage >= 50;
                   return (
-                    <tr key={student.id}>
+                    <tr key={student.id} style={getRowRevealStyle(rowIndex)}>
                       <th className="gradebook__student-column">
                         <div className="gradebook__student">
                           <span className="gradebook__student-number">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   CheckCircleFilled,
@@ -319,6 +319,14 @@ const StudentDashboard = () => {
     logout();
     navigate(ROUTES.LOGIN, { replace: true });
   };
+  const getResultRevealStyle = (index: number) =>
+    ({
+      "--student-result-delay": `${Math.min(index, 24) * 42}ms`,
+    }) as CSSProperties;
+  const getSummaryRevealStyle = (index: number) =>
+    ({
+      "--student-summary-delay": `${index * 70}ms`,
+    }) as CSSProperties;
 
   return (
     <main className="student-result-page">
@@ -373,21 +381,21 @@ const StudentDashboard = () => {
             <div><strong>{formatPercentage(percentage)}%</strong><span>Pourcentage</span></div>
           </div>
           <div className="student-result-summary__items">
-            <div>
+            <div style={getSummaryRevealStyle(0)}>
               <small>Place</small>
               <strong>{result.summary.rank ? `${result.summary.rank}e` : "-"}</strong>
             </div>
-            <div>
+            <div style={getSummaryRevealStyle(1)}>
               <small>Total général</small>
               <strong>
                 {formatNumber(result.summary.totalObtained)} / {formatNumber(result.summary.totalWeight)}
               </strong>
             </div>
-            <div>
+            <div style={getSummaryRevealStyle(2)}>
               <small>Conduite</small>
               <strong>{formatAppreciation(result.summary.conduite)}</strong>
             </div>
-            <div>
+            <div style={getSummaryRevealStyle(3)}>
               <small>Application</small>
               <strong>{formatAppreciation(result.summary.application)}</strong>
             </div>
@@ -415,7 +423,7 @@ const StudentDashboard = () => {
                   : 0;
                 const coursePassed = course.grade >= course.weight / 2;
                 return (
-                  <tr key={course.id}>
+                  <tr key={course.id} style={getResultRevealStyle(index)}>
                     <td className="student-result-col-index" data-label="N°">{index + 1}</td>
                     <td className="student-result-col-course" data-label="Cours">
                       <strong>{course.name}</strong>

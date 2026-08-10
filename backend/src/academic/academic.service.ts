@@ -8,6 +8,10 @@ import { handlePrismaError } from "../common/prisma-errors";
 import { generateStudentMatricule } from "../students/student-matricule";
 import {
   AssignStudentDto,
+  BulkToggleResultVisibilityDto,
+  BulkCreateClassesDto,
+  BulkCreateCoursesDto,
+  BulkCreateTeachersDto,
   CreateClassDto,
   CreateCourseAssignmentDto,
   CreateHomeroomAssignmentDto,
@@ -108,6 +112,50 @@ export class AcademicService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private async buildUniqueClassCode(
+    id_ecole: bigint,
+    label: string,
+    reservedCodes = new Set<string>(),
+  ) {
+    const baseCode = classCodeBase(label);
+    let code = baseCode;
+    let suffix = 1;
+    while (
+      reservedCodes.has(code) ||
+      (await this.prisma.classes.findUnique({
+        where: { id_ecole_code_classe: { id_ecole, code_classe: code } },
+        select: { id_classe: true },
+      }))
+    ) {
+      suffix += 1;
+      code = `${baseCode.slice(0, 25)}-${suffix}`;
+    }
+    reservedCodes.add(code);
+    return code;
+  }
+
+  private async buildUniqueCourseCode(
+    id_ecole: bigint,
+    label: string,
+    reservedCodes = new Set<string>(),
+  ) {
+    const baseCode = classCodeBase(label);
+    let code = baseCode;
+    let suffix = 1;
+    while (
+      reservedCodes.has(code) ||
+      (await this.prisma.cours.findUnique({
+        where: { id_ecole_code_cours: { id_ecole, code_cours: code } },
+        select: { id_cours: true },
+      }))
+    ) {
+      suffix += 1;
+      code = `${baseCode.slice(0, 25)}-${suffix}`;
+    }
+    reservedCodes.add(code);
+    return code;
+  }
+
   streamGradeSubmissionEvents(schoolId: string) {
     return merge(
       this.gradeSubmissionEvents$.pipe(
@@ -147,7 +195,7 @@ export class AcademicService {
         ecoles: { select: { nom_ecole: true } },
         inscriptions: {
           include: {
-            classes: { select: { libelle: true } },
+            classes: { select: { id_classe: true, libelle: true } },
             annees_scolaires: {
               include: { periodes: { where: { statut: "ACTIF" }, orderBy: { numero: "asc" } } },
             },
@@ -183,6 +231,8 @@ export class AcademicService {
       );
       return {
         id: student.id_eleve.toString(),
+        schoolId: student.id_ecole.toString(),
+        classId: enrollment?.id_classe.toString() ?? null,
         enrollmentId: enrollment?.id_inscription.toString() ?? null,
         matricule: student.matricule,
         lastName: student.nom,
@@ -241,6 +291,95 @@ export class AcademicService {
       },
     });
     return { isVisible };
+  }
+
+  async setBulkResultVisibility(
+    periodId: string,
+    dto: BulkToggleResultVisibilityDto,
+  ) {
+    if (!dto.schoolId && !dto.classId) {
+      throw new BadRequestException(
+        "Sélectionnez une école ou une classe avant l’action groupée.",
+      );
+    }
+
+    const id_periode = toBigInt(periodId);
+    const period = await this.prisma.periodes.findFirst({
+      where: { id_periode, statut: "ACTIF" },
+      select: { id_annee_scolaire: true, est_ouverte: true },
+    });
+    if (!period) {
+      throw new BadRequestException("Période scolaire introuvable.");
+    }
+    if (dto.isVisible && !period.est_ouverte) {
+      throw new BadRequestException(
+        "Cette période est fermée. Ouvrez-la avant de rendre les résultats disponibles.",
+      );
+    }
+
+    const id_ecole = dto.schoolId ? toBigInt(dto.schoolId) : undefined;
+    const id_classe = dto.classId ? toBigInt(dto.classId) : undefined;
+    const enrollments = await this.prisma.inscriptions.findMany({
+      where: {
+        id_annee_scolaire: period.id_annee_scolaire,
+        statut: "INSCRIT",
+        ...(id_classe ? { id_classe } : {}),
+        eleves: {
+          statut: "ACTIF",
+          ...(id_ecole ? { id_ecole } : {}),
+        },
+      },
+      select: { id_inscription: true },
+    });
+
+    const enrollmentIds = enrollments.map((item) => item.id_inscription);
+    if (enrollmentIds.length === 0) {
+      return { isVisible: dto.isVisible, affectedCount: 0 };
+    }
+
+    const publishedAt = dto.isVisible ? new Date() : null;
+    const existingResults = await this.prisma.resultats.findMany({
+      where: {
+        id_periode,
+        id_inscription: { in: enrollmentIds },
+      },
+      select: { id_inscription: true },
+    });
+    const existingEnrollmentIds = new Set(
+      existingResults.map((result) => result.id_inscription.toString()),
+    );
+    const missingEnrollmentIds = enrollmentIds.filter(
+      (id_inscription) => !existingEnrollmentIds.has(id_inscription.toString()),
+    );
+
+    await this.prisma.$transaction([
+      ...(missingEnrollmentIds.length > 0
+        ? [
+            this.prisma.resultats.createMany({
+              data: missingEnrollmentIds.map((id_inscription) => ({
+                id_inscription,
+                id_periode,
+                statut: dto.isVisible ? "PUBLIE" : "BROUILLON",
+                date_publication: publishedAt,
+              })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+      this.prisma.resultats.updateMany({
+        where: {
+          id_periode,
+          id_inscription: { in: enrollmentIds },
+        },
+        data: {
+          statut: dto.isVisible ? "PUBLIE" : "BROUILLON",
+          date_publication: publishedAt,
+          date_mise_a_jour: new Date(),
+        },
+      }),
+    ]);
+
+    return { isVisible: dto.isVisible, affectedCount: enrollmentIds.length };
   }
 
   async getStudentResult(
@@ -1516,20 +1655,7 @@ export class AcademicService {
     const id_ecole = toBigInt(schoolId);
     const normalizedLabel = dto.label.trim().replace(/\s+/g, " ");
     try {
-      const baseCode = classCodeBase(dto.label);
-      let code = baseCode;
-      let suffix = 1;
-      while (
-        await this.prisma.classes.findUnique({
-          where: {
-            id_ecole_code_classe: { id_ecole, code_classe: code },
-          },
-          select: { id_classe: true },
-        })
-      ) {
-        suffix += 1;
-        code = `${baseCode.slice(0, 25)}-${suffix}`;
-      }
+      const code = await this.buildUniqueClassCode(id_ecole, dto.label);
 
       const schoolClass = await this.prisma.classes.create({
         data: {
@@ -1543,6 +1669,33 @@ export class AcademicService {
         label: schoolClass.libelle,
         code: schoolClass.code_classe,
       };
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  async createClasses(dto: BulkCreateClassesDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const reservedCodes = new Set<string>();
+    const classes = [];
+    for (const item of dto.classes) {
+      const normalizedLabel = item.label.trim().replace(/\s+/g, " ");
+      classes.push({
+        id_ecole,
+        libelle: normalizedLabel,
+        code_classe: await this.buildUniqueClassCode(
+          id_ecole,
+          normalizedLabel,
+          reservedCodes,
+        ),
+      });
+    }
+    if (classes.length === 0) {
+      throw new BadRequestException("Aucune classe à ajouter.");
+    }
+    try {
+      const result = await this.prisma.classes.createMany({ data: classes });
+      return { createdCount: result.count };
     } catch (error) {
       handlePrismaError(error);
     }
@@ -1643,6 +1796,29 @@ export class AcademicService {
     }
   }
 
+  async createTeachers(dto: BulkCreateTeachersDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const teachers = dto.teachers.map((teacher) => ({
+      id_ecole,
+      nom: uppercaseName(teacher.lastName),
+      prenom: capitalizeFirstName(teacher.firstName),
+      sexe: clean(teacher.gender),
+      telephone: clean(teacher.phone),
+      photo: clean(teacher.photo),
+    }));
+    if (teachers.length === 0) {
+      throw new BadRequestException("Aucun professeur à ajouter.");
+    }
+    try {
+      const result = await this.prisma.professeurs.createMany({
+        data: teachers,
+      });
+      return { createdCount: result.count };
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
   async updateTeacher(id: string, dto: UpdateTeacherDto) {
     try {
       return await this.prisma.professeurs.update({
@@ -1700,18 +1876,7 @@ export class AcademicService {
 
   async createCourse(dto: CreateCourseDto, schoolId: string) {
     const id_ecole = toBigInt(schoolId);
-    const baseCode = classCodeBase(dto.label);
-    let code = baseCode;
-    let suffix = 1;
-    while (
-      await this.prisma.cours.findUnique({
-        where: { id_ecole_code_cours: { id_ecole, code_cours: code } },
-        select: { id_cours: true },
-      })
-    ) {
-      suffix += 1;
-      code = `${baseCode.slice(0, 25)}-${suffix}`;
-    }
+    const code = await this.buildUniqueCourseCode(id_ecole, dto.label);
     try {
       const course = await this.prisma.cours.create({
         data: {
@@ -1721,6 +1886,33 @@ export class AcademicService {
         },
       });
       return { id: course.id_cours.toString() };
+    } catch (error) {
+      handlePrismaError(error);
+    }
+  }
+
+  async createCourses(dto: BulkCreateCoursesDto, schoolId: string) {
+    const id_ecole = toBigInt(schoolId);
+    const reservedCodes = new Set<string>();
+    const courses = [];
+    for (const item of dto.courses) {
+      const normalizedLabel = item.label.trim().replace(/\s+/g, " ");
+      courses.push({
+        id_ecole,
+        libelle: normalizedLabel,
+        code_cours: await this.buildUniqueCourseCode(
+          id_ecole,
+          normalizedLabel,
+          reservedCodes,
+        ),
+      });
+    }
+    if (courses.length === 0) {
+      throw new BadRequestException("Aucun cours à ajouter.");
+    }
+    try {
+      const result = await this.prisma.cours.createMany({ data: courses });
+      return { createdCount: result.count };
     } catch (error) {
       handlePrismaError(error);
     }

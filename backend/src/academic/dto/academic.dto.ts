@@ -91,6 +91,14 @@ export class CreateClassDto {
 
 export class UpdateClassDto extends CreateClassDto {}
 
+export class BulkCreateClassesDto {
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => CreateClassDto)
+  classes: CreateClassDto[];
+}
+
 export class CreateTeacherDto {
   @IsOptional()
   @IsInt()
@@ -123,6 +131,14 @@ export class CreateTeacherDto {
 
 export class UpdateTeacherDto extends CreateTeacherDto {}
 
+export class BulkCreateTeachersDto {
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => CreateTeacherDto)
+  teachers: CreateTeacherDto[];
+}
+
 export class CreateCourseDto {
   @IsOptional()
   @IsInt()
@@ -137,6 +153,14 @@ export class CreateCourseDto {
 }
 
 export class UpdateCourseDto extends CreateCourseDto {}
+
+export class BulkCreateCoursesDto {
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => CreateCourseDto)
+  courses: CreateCourseDto[];
+}
 
 export class CreateStudentDto {
   @IsOptional()
@@ -369,6 +393,19 @@ export class ReviewDeletionRequestDto {
 export class ToggleResultVisibilityDto {
   @IsBoolean()
   isVisible: boolean;
+}
+
+export class BulkToggleResultVisibilityDto {
+  @IsBoolean()
+  isVisible: boolean;
+
+  @IsOptional()
+  @IsString()
+  schoolId?: string;
+
+  @IsOptional()
+  @IsString()
+  classId?: string;
 }
 
 export class AssignStudentDto {
