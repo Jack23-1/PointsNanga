@@ -19,4 +19,6 @@ export interface SchoolFormData {
   city: string;
   phone: string;
   isActive?: boolean;
+  password?: string;
+  passwordConfirmation?: string;
 }

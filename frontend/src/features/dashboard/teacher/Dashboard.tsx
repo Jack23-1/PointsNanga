@@ -8,6 +8,8 @@ import { Button, Card, Empty, Skeleton, message } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
 import GradesPage from "../../grades/pages/GradesPage";
+import TeacherCoursesPage from "../../grades/pages/TeacherCoursesPage";
+import { useAuth } from "../../../hooks/useAuth";
 
 interface HomeroomDashboardData {
   titular: { name: string; code: string };
@@ -28,6 +30,7 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const TeacherDashboard = () => {
+  const { user } = useAuth();
   const [data, setData] = useState<HomeroomDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,9 +48,9 @@ const TeacherDashboard = () => {
     }
   };
 
-  useEffect(() => {
-    void loadDashboard();
-  }, []);
+  useEffect(() => { if (user?.isHomeroom) void loadDashboard(); else setLoading(false); }, [user?.isHomeroom]);
+
+  if (!user?.isHomeroom) return <TeacherCoursesPage />;
 
   if (loading && !data) {
     return (

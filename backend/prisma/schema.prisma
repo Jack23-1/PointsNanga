@@ -29,16 +29,33 @@ model DeletionRequest {
 }
 
 model GradeSubmission {
-  id          String   @id @default(uuid())
-  titularId  BigInt   @map("titular_id")
-  periodId   BigInt   @map("period_id")
-  status     String   @default("SUBMITTED")
-  submittedAt DateTime @default(now()) @map("submitted_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(uuid())
+  titularId        BigInt    @map("titular_id")
+  periodId         BigInt    @map("period_id")
+  status           String    @default("SUBMITTED")
+  submittedAt      DateTime  @default(now()) @map("submitted_at")
+  rejectionComment String?   @map("rejection_comment")
+  rejectedAt       DateTime? @map("rejected_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@unique([titularId, periodId])
   @@index([status, submittedAt])
   @@map("grade_submissions")
+}
+
+model TeacherGradeSubmission {
+  id           String   @id @default(uuid())
+  assignmentId BigInt   @map("assignment_id")
+  periodId     BigInt   @map("period_id")
+  professorId  BigInt   @map("professor_id")
+  titularId    BigInt   @map("titular_id")
+  status       String   @default("SUBMITTED")
+  submittedAt  DateTime @default(now()) @map("submitted_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([assignmentId, periodId])
+  @@index([titularId, periodId, status])
+  @@map("teacher_grade_submissions")
 }
 
 model SuperAdmin {
@@ -139,24 +156,27 @@ model classes {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model cotes {
-  id_cote          BigInt        @id @default(autoincrement())
-  id_inscription   BigInt
-  id_cours_classe  BigInt
-  id_periode       BigInt
-  id_titulaire     BigInt
-  cote_obtenue     Decimal       @db.Decimal(6, 2)
-  observation      String?
-  date_saisie      DateTime      @default(now()) @db.Timestamptz(6)
-  date_mise_a_jour DateTime      @default(now()) @db.Timestamptz(6)
-  cours_classes    cours_classes @relation(fields: [id_cours_classe], references: [id_cours_classe], onUpdate: NoAction, map: "fk_cote_cours_classe")
-  inscriptions     inscriptions  @relation(fields: [id_inscription], references: [id_inscription], onUpdate: NoAction, map: "fk_cote_inscription")
-  periodes         periodes      @relation(fields: [id_periode], references: [id_periode], onUpdate: NoAction, map: "fk_cote_periode")
-  titulaires       titulaires    @relation(fields: [id_titulaire], references: [id_titulaire], onUpdate: NoAction, map: "fk_cote_titulaire")
+  id_cote              BigInt        @id @default(autoincrement())
+  id_inscription       BigInt
+  id_cours_classe      BigInt
+  id_periode           BigInt
+  id_titulaire         BigInt?
+  id_professeur_saisie BigInt?
+  cote_obtenue         Decimal       @db.Decimal(6, 2)
+  observation          String?
+  date_saisie          DateTime      @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour     DateTime      @default(now()) @db.Timestamptz(6)
+  cours_classes        cours_classes @relation(fields: [id_cours_classe], references: [id_cours_classe], onUpdate: NoAction, map: "fk_cote_cours_classe")
+  inscriptions         inscriptions  @relation(fields: [id_inscription], references: [id_inscription], onUpdate: NoAction, map: "fk_cote_inscription")
+  periodes             periodes      @relation(fields: [id_periode], references: [id_periode], onUpdate: NoAction, map: "fk_cote_periode")
+  titulaires           titulaires?   @relation(fields: [id_titulaire], references: [id_titulaire], onUpdate: NoAction, map: "fk_cote_titulaire")
+  professeur_saisie    professeurs?  @relation("professeur_cotes_saisies", fields: [id_professeur_saisie], references: [id_professeur], onUpdate: NoAction, map: "fk_cote_professeur_saisie")
 
   @@unique([id_inscription, id_cours_classe, id_periode], map: "uq_cote_eleve_cours_periode")
   @@index([id_cours_classe], map: "idx_cotes_cours")
   @@index([id_inscription], map: "idx_cotes_inscription")
   @@index([id_periode], map: "idx_cotes_periode")
+  @@index([id_professeur_saisie], map: "idx_cotes_professeur_saisie")
 }
 
 model cours {
@@ -329,26 +349,32 @@ model periodes {
 }
 
 model professeurs {
-  id_professeur            BigInt                     @id @default(autoincrement())
-  id_ecole                 BigInt
-  matricule                String?                    @db.VarChar(50)
-  nom                      String                     @db.VarChar(100)
-  postnom                  String?                    @db.VarChar(100)
-  prenom                   String                     @db.VarChar(100)
-  sexe                     String?                    @db.VarChar(20)
-  telephone                String?                    @db.VarChar(30)
-  photo                    String?
-  email                    String?                    @db.VarChar(150)
-  adresse                  String?                    @db.VarChar(255)
-  specialite               String?                    @db.VarChar(150)
-  statut                   statut_general             @default(ACTIF)
-  date_creation            DateTime                   @default(now()) @db.Timestamptz(6)
-  date_mise_a_jour         DateTime                   @default(now()) @db.Timestamptz(6)
-  affectations_professeurs affectations_professeurs[]
-  ecoles                   ecoles                     @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_professeur_ecole")
-  titulaires               titulaires[]
+  id_professeur             BigInt                     @id @default(autoincrement())
+  id_ecole                  BigInt
+  matricule                 String?                    @db.VarChar(50)
+  mot_de_passe_hash         String?
+  doit_changer_mot_de_passe Boolean                    @default(true)
+  statut_compte             statut_compte              @default(ACTIF)
+  derniere_connexion        DateTime?                  @db.Timestamptz(6)
+  nom                       String                     @db.VarChar(100)
+  postnom                   String?                    @db.VarChar(100)
+  prenom                    String                     @db.VarChar(100)
+  sexe                      String?                    @db.VarChar(20)
+  telephone                 String?                    @db.VarChar(30)
+  photo                     String?
+  email                     String?                    @db.VarChar(150)
+  adresse                   String?                    @db.VarChar(255)
+  specialite                String?                    @db.VarChar(150)
+  statut                    statut_general             @default(ACTIF)
+  date_creation             DateTime                   @default(now()) @db.Timestamptz(6)
+  date_mise_a_jour          DateTime                   @default(now()) @db.Timestamptz(6)
+  affectations_professeurs  affectations_professeurs[]
+  ecoles                    ecoles                     @relation(fields: [id_ecole], references: [id_ecole], onUpdate: NoAction, map: "fk_professeur_ecole")
+  titulaires                titulaires[]
+  cotes_saisies             cotes[]                    @relation("professeur_cotes_saisies")
 
   @@unique([id_ecole, matricule], map: "uq_professeur_matricule")
+  @@unique([matricule], map: "uq_professeur_matricule_global")
   @@index([id_ecole], map: "idx_professeurs_ecole")
 }
 

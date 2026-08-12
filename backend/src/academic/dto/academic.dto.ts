@@ -50,6 +50,12 @@ export class CreateSchoolDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password?: string;
 }
 
 export class UpdateSchoolDto extends CreateSchoolDto {}
@@ -135,6 +141,13 @@ export class CreateTeacherDto {
 }
 
 export class UpdateTeacherDto extends CreateTeacherDto {}
+
+export class ResetTeacherPasswordDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password: string;
+}
 
 export class BulkCreateTeachersDto {
   @IsArray()
@@ -263,6 +276,18 @@ export class CreateCourseAssignmentDto {
   @IsInt()
   @Min(1)
   weight: number;
+}
+
+export class CopyCourseAssignmentsDto {
+  @IsInt()
+  @Min(1)
+  sourceYearId: number;
+
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => CreateCourseAssignmentDto)
+  assignments: CreateCourseAssignmentDto[];
 }
 
 export class ReplaceCourseTeacherDto {
@@ -395,6 +420,14 @@ export class ReviewDeletionRequestDto {
   comment?: string;
 }
 
+export class RejectGradeSubmissionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(500)
+  comment: string;
+}
+
 export class ToggleResultVisibilityDto {
   @IsBoolean()
   isVisible: boolean;
@@ -429,4 +462,31 @@ export class AssignStudentDto {
   @IsOptional()
   @IsNumber()
   orderNumber?: number;
+}
+
+export class ReenrollStudentRowDto {
+  @IsInt()
+  @Min(1)
+  studentId: number;
+
+  @IsInt()
+  @Min(1)
+  classId: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  orderNumber?: number;
+}
+
+export class ReenrollStudentsDto {
+  @IsInt()
+  @Min(1)
+  sourceYearId: number;
+
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => ReenrollStudentRowDto)
+  students: ReenrollStudentRowDto[];
 }

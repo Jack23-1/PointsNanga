@@ -21,6 +21,15 @@ export class LoginDto {
   password: string;
 }
 
+export class ResolveSchoolDto {
+  @IsIn(["director", "teacher"])
+  role: "director" | "teacher";
+
+  @IsString()
+  @IsNotEmpty()
+  identifier: string;
+}
+
 export class ForgotPasswordDto {
   @IsEmail()
   email: string;

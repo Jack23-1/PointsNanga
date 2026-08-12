@@ -11,6 +11,7 @@ import {
   CreateClassDto,
   CreateCourseDto,
   CreateCourseAssignmentDto,
+  CopyCourseAssignmentsDto,
   CreateHomeroomAssignmentDto,
   CreateOptionDto,
   CreateSchoolYearDto,
@@ -30,7 +31,10 @@ import {
   ToggleResultVisibilityDto,
   ReviewDeletionRequestDto,
   ResetHomeroomPasswordDto,
+  ResetTeacherPasswordDto,
   ReplaceCourseTeacherDto,
+  ReenrollStudentsDto,
+  RejectGradeSubmissionDto,
 } from "./dto/academic.dto";
 
 @Controller()
@@ -56,23 +60,75 @@ export class AcademicController {
 
   @Get("dashboard/homeroom")
   @Roles("teacher")
-  homeroomDashboard(@Req() request: { user?: { sub?: string | number } }) {
-    if (!request.user?.sub) {
+  homeroomDashboard(@Req() request: { user?: { titularId?: string | number } }) {
+    if (!request.user?.titularId) {
       throw new ForbiddenException("Session titulaire invalide.");
     }
-    return this.academicService.getHomeroomDashboard(String(request.user.sub));
+    return this.academicService.getHomeroomDashboard(String(request.user.titularId));
   }
 
   @Get("grades/homeroom")
   @Roles("teacher")
   homeroomGradebook(
-    @Req() request: { user?: { sub?: string | number } },
+    @Req() request: { user?: { titularId?: string | number } },
     @Query("periodId") periodId?: string,
   ) {
-    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
+    if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
     return this.academicService.getHomeroomGradebook(
-      String(request.user.sub),
+      String(request.user.titularId),
       periodId,
+    );
+  }
+
+  @Get("grades/teacher/assignments")
+  @Roles("teacher")
+  teacherGradeAssignments(
+    @Req() request: { user?: { sub?: string | number } },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.getTeacherGradeAssignments(String(request.user.sub));
+  }
+
+  @Get("grades/teacher")
+  @Roles("teacher")
+  teacherGradebook(
+    @Req() request: { user?: { sub?: string | number } },
+    @Query("assignmentId") assignmentId?: string,
+    @Query("periodId") periodId?: string,
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.getTeacherGradebook(
+      String(request.user.sub),
+      assignmentId ?? "",
+      periodId,
+    );
+  }
+
+  @Patch("grades/teacher")
+  @Roles("teacher")
+  saveTeacherGrades(
+    @Req() request: { user?: { sub?: string | number } },
+    @Body() dto: SaveHomeroomGradesDto & { assignmentId?: string | number },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.saveTeacherGrades(
+      String(request.user.sub),
+      String(dto.assignmentId ?? ""),
+      dto,
+    );
+  }
+
+  @Post("grades/teacher/submit")
+  @Roles("teacher")
+  submitTeacherGrades(
+    @Req() request: { user?: { sub?: string | number } },
+    @Body() dto: { assignmentId?: string | number; periodId?: string | number },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.submitTeacherGrades(
+      String(request.user.sub),
+      String(dto.assignmentId ?? ""),
+      String(dto.periodId ?? ""),
     );
   }
 
@@ -129,21 +185,21 @@ export class AcademicController {
   @Patch("grades/homeroom")
   @Roles("teacher")
   saveHomeroomGrades(
-    @Req() request: { user?: { sub?: string | number } },
+    @Req() request: { user?: { titularId?: string | number } },
     @Body() dto: SaveHomeroomGradesDto,
   ) {
-    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
-    return this.academicService.saveHomeroomGrades(String(request.user.sub), dto);
+    if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.saveHomeroomGrades(String(request.user.titularId), dto);
   }
 
   @Post("grades/homeroom/submit")
   @Roles("teacher")
   submitHomeroomGrades(
-    @Req() request: { user?: { sub?: string | number } },
+    @Req() request: { user?: { titularId?: string | number } },
     @Body() dto: { periodId?: string | number },
   ) {
-    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
-    return this.academicService.submitHomeroomGrades(String(request.user.sub), String(dto.periodId ?? ""));
+    if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.submitHomeroomGrades(String(request.user.titularId), String(dto.periodId ?? ""));
   }
 
   @Get("grade-submissions")
@@ -167,10 +223,10 @@ export class AcademicController {
   @Sse("grade-submissions/homeroom/events")
   @Roles("teacher")
   homeroomGradeSubmissionEvents(
-    @Req() request: { user?: { sub?: string | number } },
+    @Req() request: { user?: { titularId?: string | number } },
   ) {
-    if (!request.user?.sub) throw new ForbiddenException("Session titulaire invalide.");
-    return this.academicService.streamHomeroomGradeSubmissionEvents(String(request.user.sub));
+    if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.streamHomeroomGradeSubmissionEvents(String(request.user.titularId));
   }
 
   @Patch("grade-submissions/:id/reopen")
@@ -191,6 +247,21 @@ export class AcademicController {
   ) {
     if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
     return this.academicService.approveGradeSubmission(id, String(request.user.schoolId));
+  }
+
+  @Patch("grade-submissions/:id/reject")
+  @Roles("director")
+  rejectGradeSubmission(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: RejectGradeSubmissionDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.rejectGradeSubmission(
+      id,
+      String(request.user.schoolId),
+      dto.comment,
+    );
   }
 
   @Get("options")
@@ -329,6 +400,17 @@ export class AcademicController {
     return this.academicService.deleteTeacher(id, String(request.user.schoolId));
   }
 
+  @Post("teachers/:id/reset-password")
+  @Roles("director")
+  resetTeacherPassword(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: ResetTeacherPasswordDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.resetTeacherPassword(id, String(request.user.schoolId), dto.password);
+  }
+
   @Get("courses")
   listCourses(
     @Req() request: { user?: { role?: string; schoolId?: string | number } },
@@ -393,6 +475,26 @@ export class AcademicController {
     return this.academicService.createCourseAssignment(dto, String(request.user.schoolId));
   }
 
+  @Get("course-assignments/copy-preview/:sourceYearId")
+  @Roles("director")
+  previewCourseAssignmentsCopy(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("sourceYearId") sourceYearId: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.previewCourseAssignmentsCopy(sourceYearId, String(request.user.schoolId));
+  }
+
+  @Post("course-assignments/copy")
+  @Roles("director")
+  copyCourseAssignments(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: CopyCourseAssignmentsDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.copyCourseAssignments(dto, String(request.user.schoolId));
+  }
+
   @Get("course-assignments/history")
   courseAssignmentHistory(
     @Req() request: { user?: { schoolId?: string | number } },
@@ -448,6 +550,15 @@ export class AcademicController {
     return this.academicService.updateHomeroomAssignment(id, dto, String(request.user.schoolId));
   }
 
+  @Delete("homeroom-assignments/:id/with-gradebook")
+  deleteHomeroomAssignmentWithGradebook(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.deleteHomeroomAssignmentWithGradebook(id, String(request.user.schoolId));
+  }
+
   @Post("homeroom-assignments/:id/reset-password")
   resetHomeroomPassword(
     @Req() request: { user?: { schoolId?: string | number } },
@@ -493,6 +604,26 @@ export class AcademicController {
   ) {
     if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
     return this.academicService.importStudents(dto.students, String(request.user.schoolId));
+  }
+
+  @Get("students/reenrollment-preview/:sourceYearId")
+  @Roles("director")
+  previewStudentReenrollment(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("sourceYearId") sourceYearId: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.previewStudentReenrollment(sourceYearId, String(request.user.schoolId));
+  }
+
+  @Post("students/reenroll")
+  @Roles("director")
+  reenrollStudents(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: ReenrollStudentsDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.reenrollStudents(dto, String(request.user.schoolId));
   }
 
   @Patch("students/:id")

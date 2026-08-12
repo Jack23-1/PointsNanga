@@ -189,9 +189,17 @@ const Sidebar: React.FC = () => {
         {
           key: ROUTES.DASHBOARD,
           icon: <BookOutlined />,
-          label: "Notes",
+          label: user.isHomeroom ? "Grille titulaire" : "Mes cours et notes",
           onClick: () => handleNavigation(ROUTES.DASHBOARD),
         },
+        ...(user.isHomeroom
+          ? [{
+              key: ROUTES.TEACHER_COURSES,
+              icon: <ReadOutlined />,
+              label: "Mes cotes",
+              onClick: () => handleNavigation(ROUTES.TEACHER_COURSES),
+            }]
+          : []),
         {
           key: "logout",
           icon: <LogoutOutlined />,

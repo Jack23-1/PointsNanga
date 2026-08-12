@@ -18,6 +18,42 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
+  async resolveSchool(role: "director" | "teacher", identifier: string) {
+    const normalizedIdentifier = identifier.trim();
+    if (!normalizedIdentifier) return { school: null };
+
+    if (role === "director") {
+      const school = await this.prisma.ecoles.findUnique({
+        where: { code_ecole: normalizedIdentifier.toUpperCase() },
+        select: { nom_ecole: true, logo: true },
+      });
+
+      return {
+        school: school
+          ? { name: school.nom_ecole, logo: school.logo }
+          : null,
+      };
+    }
+
+    const professor = await this.prisma.professeurs.findUnique({
+      where: { matricule: normalizedIdentifier.toUpperCase() },
+      select: {
+        ecoles: { select: { nom_ecole: true, logo: true } },
+        titulaires: { where: { statut_compte: "ACTIF", annees_scolaires: { est_active: true } }, select: { classes: { select: { libelle: true } } }, take: 1 },
+      },
+    });
+
+    return {
+      school: professor
+        ? {
+            name: professor.ecoles.nom_ecole,
+            logo: professor.ecoles.logo,
+            className: professor.titulaires[0]?.classes.libelle ?? null,
+          }
+        : null,
+    };
+  }
+
   async forgotPassword(email: string) {
     const normalizedEmail = email.trim().toLowerCase();
     const superAdmin = await this.prisma.superAdmin.findUnique({
@@ -94,6 +130,7 @@ export class AuthService {
       sub: user.id,
       role: user.role,
       schoolId: "schoolId" in user ? user.schoolId : undefined,
+      titularId: "titularId" in user ? user.titularId : undefined,
     };
     const accessToken = await this.jwtService.signAsync({
       ...payload,
@@ -112,6 +149,7 @@ export class AuthService {
       sub: string;
       role: string;
       schoolId?: string;
+      titularId?: string;
       tokenType?: string;
     };
     try {
@@ -127,6 +165,7 @@ export class AuthService {
       sub: payload.sub,
       role: payload.role,
       schoolId: payload.schoolId,
+      titularId: payload.titularId,
       tokenType: "access",
     });
     return { accessToken };
@@ -185,19 +224,12 @@ export class AuthService {
 
   private async validateDirector(loginDto: LoginDto) {
     if (loginDto.matricule) {
-      if (!loginDto.schoolName) {
-        throw new BadRequestException(
-          "Nom de l’école, code établissement et mot de passe obligatoires.",
-        );
-      }
-
       const school = await this.prisma.ecoles.findUnique({
         where: { code_ecole: loginDto.matricule.trim().toUpperCase() },
       });
 
       if (
         !school ||
-        school.nom_ecole !== loginDto.schoolName.trim() ||
         school.statut !== "ACTIF" ||
         !school.mot_de_passe_hash ||
         !(await bcrypt.compare(loginDto.password, school.mot_de_passe_hash))
@@ -218,14 +250,13 @@ export class AuthService {
       };
     }
 
-    if (!loginDto.email || !loginDto.schoolName) {
+    if (!loginDto.email) {
       throw new BadRequestException("Code établissement obligatoire.");
     }
 
     const director = await this.prisma.directeurs.findFirst({
       where: {
         email: loginDto.email.trim().toLowerCase(),
-        ecoles: { nom_ecole: loginDto.schoolName },
       },
       include: { ecoles: true },
     });
@@ -264,49 +295,57 @@ export class AuthService {
   }
 
   private async validateTeacher(loginDto: LoginDto) {
-    if (!loginDto.matricule || !loginDto.schoolName) {
-      throw new BadRequestException("École et matricule obligatoires.");
+    if (!loginDto.matricule) {
+      throw new BadRequestException("Matricule obligatoire.");
     }
 
-    const titulaire = await this.prisma.titulaires.findFirst({
-      where: {
-        code_connexion: loginDto.matricule.trim(),
-        professeurs: { ecoles: { nom_ecole: loginDto.schoolName } },
+    const professor = await this.prisma.professeurs.findUnique({
+      where: { matricule: loginDto.matricule.trim().toUpperCase() },
+      include: {
+        ecoles: true,
+        titulaires: {
+          where: { statut_compte: "ACTIF", annees_scolaires: { est_active: true } },
+          include: { classes: true },
+          take: 1,
+        },
       },
-      include: { professeurs: { include: { ecoles: true } }, classes: true },
     });
 
-    if (!titulaire || titulaire.statut_compte !== "ACTIF") {
+    if (!professor || professor.statut !== "ACTIF" || professor.statut_compte !== "ACTIF" || !professor.mot_de_passe_hash) {
       throw new UnauthorizedException("Identifiants invalides.");
     }
-    if (titulaire.professeurs.ecoles.statut !== "ACTIF") {
+    if (professor.ecoles.statut !== "ACTIF") {
       throw new UnauthorizedException("Cette école est suspendue.");
     }
 
     const passwordMatches = await bcrypt.compare(
       loginDto.password,
-      titulaire.mot_de_passe_hash,
+      professor.mot_de_passe_hash,
     );
 
     if (!passwordMatches) {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 
-    await this.prisma.titulaires.update({
-      where: { id_titulaire: titulaire.id_titulaire },
+    await this.prisma.professeurs.update({
+      where: { id_professeur: professor.id_professeur },
       data: { derniere_connexion: new Date() },
     });
 
+    const titulaire = professor.titulaires[0];
+
     return {
-      id: titulaire.id_titulaire.toString(),
-      email: titulaire.code_connexion,
-      firstName: titulaire.professeurs.prenom,
-      lastName: titulaire.professeurs.nom,
+      id: professor.id_professeur.toString(),
+      email: professor.matricule!,
+      firstName: professor.prenom,
+      lastName: professor.nom,
       role: "teacher" as const,
-      schoolId: titulaire.professeurs.id_ecole.toString(),
-      classId: titulaire.id_classe.toString(),
-      createdAt: titulaire.date_creation.toISOString(),
-      updatedAt: titulaire.date_mise_a_jour.toISOString(),
+      schoolId: professor.id_ecole.toString(),
+      titularId: titulaire?.id_titulaire.toString(),
+      classId: titulaire?.id_classe.toString(),
+      isHomeroom: Boolean(titulaire),
+      createdAt: professor.date_creation.toISOString(),
+      updatedAt: professor.date_mise_a_jour.toISOString(),
     };
   }
 

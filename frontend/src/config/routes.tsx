@@ -12,6 +12,7 @@ import TeacherDashboard from "../features/dashboard/teacher/Dashboard";
 import StudentDashboard from "../features/dashboard/student/Dashboard";
 import SchoolsPage from "../features/schools/pages/SchoolsPage";
 import GradesPage from "../features/grades/pages/GradesPage";
+import TeacherCoursesPage from "../features/grades/pages/TeacherCoursesPage";
 import StudentsPage from "../features/students/pages/StudentsPage";
 import AcademicDirectoryPage from "../features/management/pages/AcademicDirectoryPage";
 import SchoolYearsPage from "../features/management/pages/SchoolYearsPage";
@@ -98,8 +99,12 @@ export const router = createBrowserRouter([
     element: <DirectorLogin />,
   },
   {
-    path: ROUTES.HOMEROOM_LOGIN,
+    path: ROUTES.TEACHER_LOGIN,
     element: <HomeroomTeacherLogin />,
+  },
+  {
+    path: "/titulaire/login",
+    element: <Navigate to={ROUTES.TEACHER_LOGIN} replace />,
   },
   {
     path: "/",
@@ -137,6 +142,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <GradesPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.TEACHER_COURSES,
+    element: (
+      <ProtectedRoute allowedRoles={["teacher"]}>
+        <TeacherCoursesPage />
       </ProtectedRoute>
     ),
   },

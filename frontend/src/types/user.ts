@@ -10,6 +10,8 @@ export interface User {
   schoolLogo?: string | null;
   hasFullAccess?: boolean;
   classId?: string;
+  titularId?: string;
+  isHomeroom?: boolean;
   createdAt: string;
   updatedAt: string;
 }

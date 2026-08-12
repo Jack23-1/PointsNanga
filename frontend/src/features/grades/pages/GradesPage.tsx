@@ -57,7 +57,9 @@ interface Gradebook {
   periods: { id: string; name: string; number: number; isOpen: boolean }[];
   students: Student[];
   courses: Course[];
-  submissionStatus: "SUBMITTED" | "APPROVED" | "REOPENED" | null;
+  submissionStatus: "SUBMITTED" | "APPROVED" | "REOPENED" | "REJECTED" | null;
+  rejectionComment?: string | null;
+  rejectedAt?: string | null;
   grades: {
     enrollmentId: string;
     courseClassId: string;
@@ -184,8 +186,8 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     setAutoSaveStatus("pending");
   };
 
-  const loadGradebook = async (periodId?: string) => {
-    setLoading(true);
+  const loadGradebook = async (periodId?: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const response = await api.get<Gradebook>("/grades/homeroom", {
         refreshedAt: Date.now(),
@@ -222,9 +224,11 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         ),
       );
     } catch (error) {
-      message.error(errorMessage(error, "Chargement des cotes impossible."));
+      if (!silent) {
+        message.error(errorMessage(error, "Chargement des cotes impossible."));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -428,7 +432,11 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   };
 
   const save = async (automatic = false) => {
-    if (!data?.period?.isOpen) return;
+    if (!data?.period) return;
+    if (
+      !data.period.isOpen &&
+      !["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "")
+    ) return;
     const versionBeingSaved = editVersionRef.current;
     const courseWeights = new Map(
       data.courses.map((course) => [course.id, course.weight]),
@@ -533,7 +541,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     if (
       editVersion === 0 ||
       !data ||
-      (!["REOPENED"].includes(data.submissionStatus ?? "") && !data.period?.isOpen) ||
+      (!["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "") && !data.period?.isOpen) ||
       ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "")
     ) return;
 
@@ -547,16 +555,23 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   }, [editVersion]);
 
   useEffect(() => {
+    let active = true;
+    let fallbackInterval: number | undefined;
     const events = new EventSource(`${API_URL}/grade-submissions/homeroom/events`, {
       withCredentials: true,
     });
     events.onmessage = (event) => {
       try {
-        const update = JSON.parse(event.data) as { action?: string };
-        if (update.action === "approved" || update.action === "reopened") {
-          void loadGradebook(data?.period?.id);
+        const update = JSON.parse(event.data) as { action?: string; comment?: string };
+        if (update.action === "approved" || update.action === "reopened" || update.action === "rejected" || update.action === "teacher_submitted") {
+          if (!active) return;
+          void loadGradebook(data?.period?.id, true);
           message.info(
-            update.action === "reopened"
+            update.action === "teacher_submitted"
+              ? "Un professeur vient d’envoyer les cotes de son cours. La grille a été actualisée."
+              : update.action === "rejected"
+              ? "Le directeur a rejeté votre grille. Consultez son commentaire et effectuez les corrections."
+              : update.action === "reopened"
               ? "Le directeur a ouvert votre grille pour correction."
               : "Le directeur a approuvé et verrouillé votre grille.",
           );
@@ -565,7 +580,26 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         // Les battements de connexion sans données métier sont ignorés.
       }
     };
-    return () => events.close();
+    const refreshSilently = () => {
+      if (active) void loadGradebook(data?.period?.id, true);
+    };
+    events.onerror = () => {
+      if (!fallbackInterval) {
+        fallbackInterval = window.setInterval(refreshSilently, 5000);
+      }
+    };
+    events.onopen = () => {
+      if (fallbackInterval) {
+        window.clearInterval(fallbackInterval);
+        fallbackInterval = undefined;
+      }
+      refreshSilently();
+    };
+    return () => {
+      active = false;
+      events.close();
+      if (fallbackInterval) window.clearInterval(fallbackInterval);
+    };
     // La connexion reste stable ; l’identifiant courant est lu lors de l’événement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.period?.id]);
@@ -585,7 +619,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   }
 
   const isLocked = ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "");
-  const canEdit = !isLocked && (Boolean(data.period?.isOpen) || data.submissionStatus === "REOPENED");
+  const canEdit = !isLocked && (Boolean(data.period?.isOpen) || ["REOPENED", "REJECTED"].includes(data.submissionStatus ?? ""));
 
   const headerRotationClass = "gradebook__sheet--rotate-90";
   const longestCourseName = data.courses.reduce(
@@ -672,7 +706,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         ))}
       </nav>
 
-      {!data.period?.isOpen && data.submissionStatus !== "REOPENED" && (
+      {!data.period?.isOpen && !["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "") && (
         <Alert
           showIcon
           type="info"
@@ -686,6 +720,14 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           type="warning"
           message="Grille ouverte par le directeur"
           description="Vous pouvez corriger les cotes. Une nouvelle validation sera obligatoire après vos modifications."
+        />
+      )}
+      {data.submissionStatus === "REJECTED" && (
+        <Alert
+          showIcon
+          type="error"
+          message="Grille rejetée par le directeur"
+          description={<><strong>Commentaire du directeur :</strong> {data.rejectionComment || "Veuillez corriger la grille puis la soumettre à nouveau."}</>}
         />
       )}
       {isLocked && (

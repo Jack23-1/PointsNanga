@@ -698,7 +698,14 @@ export default function Login() {
         </form>
 
         <footer className="premium-login__footer">
-          Plateforme sécurisée de publication des résultats scolaires
+          <span>Plateforme sécurisée de publication des résultats scolaires</span>
+          <button
+            type="button"
+            className="premium-login__teacher-portal-link"
+            onClick={() => navigate(ROUTES.TEACHER_LOGIN)}
+          >
+            <BookOutlined /> Espace enseignant
+          </button>
         </footer>
       </section>
       {isPageTransitioning && (

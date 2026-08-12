@@ -13,9 +13,11 @@ import {
   TeamOutlined,
   UploadOutlined,
   UserOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import {
   Avatar,
+  Alert,
   Button,
   Card,
   Col,
@@ -28,6 +30,7 @@ import {
   Select,
   Space,
   Table,
+  Typography,
   Upload,
   message,
 } from "antd";
@@ -54,6 +57,7 @@ interface DirectoryRow {
   courseId?: string;
   teacherId?: string;
   weight?: number;
+  matricule?: string;
 }
 
 interface FormValues {
@@ -96,6 +100,8 @@ interface AssignmentHistoryRow {
   endDate?: string | null;
   reason?: string | null;
   isActive: boolean;
+  schoolYear: string;
+  schoolYearStatus: string;
 }
 
 interface Choice {
@@ -112,6 +118,7 @@ interface AssignmentApiRow {
   course: string;
   className: string;
   weight: number;
+  schoolYear: string;
 }
 
 interface HomeroomApiRow {
@@ -122,6 +129,9 @@ interface HomeroomApiRow {
   teacher: string;
   loginCode: string;
 }
+
+interface CopyAssignmentRow { sourceAssignmentId: string; classId: string; className: string; courseId: string; courseName: string; teacherId: string; teacherName: string; weight: number; }
+interface CopyPreview { sourceYear: { id: string; label: string }; targetYear: { id: string; label: string }; assignments: CopyAssignmentRow[]; }
 
 const contentByKind = {
   classes: {
@@ -194,6 +204,12 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<DirectoryRow | null>(null);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyYears, setCopyYears] = useState<Array<{ id: string; label: string; status: string; isActive: boolean }>>([]);
+  const [copySourceYearId, setCopySourceYearId] = useState<string>();
+  const [copyPreview, setCopyPreview] = useState<CopyPreview | null>(null);
+  const [copyRows, setCopyRows] = useState<CopyAssignmentRow[]>([]);
+  const [copyLoading, setCopyLoading] = useState(false);
   const selectedClassId = Form.useWatch("classId", form);
   const supportsBulkCreate = ["classes", "teachers", "courses"].includes(kind);
 
@@ -223,6 +239,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             detail: item.phone || "Aucun contact",
             extra: item.photo || "",
             status: "Actif",
+            matricule: item.matricule,
           })),
         );
       } else if (kind === "courses") {
@@ -252,7 +269,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             secondary: item.className,
             detail: item.teacher,
             extra: String(item.weight),
-            status: "Actif",
+            status: item.schoolYear,
             classId: item.classId,
             courseId: item.courseId,
             teacherId: item.teacherId,
@@ -371,6 +388,37 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     setIsModalOpen(true);
   };
 
+  const openCopyAssignments = async () => {
+    setCopyOpen(true); setCopyPreview(null); setCopyRows([]); setCopySourceYearId(undefined); setCopyLoading(true);
+    try {
+      const years = (await api.get<any[]>("/school-years")).data;
+      setCopyYears(years.map((item) => ({ id: item.id, label: item.label, status: item.status, isActive: item.isActive })));
+    } catch (error) { message.error(errorMessage(error, "Années scolaires impossibles à charger.")); }
+    finally { setCopyLoading(false); }
+  };
+
+  const loadCopyPreview = async (yearId: string) => {
+    setCopySourceYearId(yearId); setCopyLoading(true);
+    try { const preview = (await api.get<CopyPreview>(`/course-assignments/copy-preview/${yearId}`)).data; setCopyPreview(preview); setCopyRows(preview.assignments); }
+    catch (error) { setCopyPreview(null); setCopyRows([]); message.error(errorMessage(error, "Aperçu impossible à charger.")); }
+    finally { setCopyLoading(false); }
+  };
+
+  const applyCopiedAssignments = async () => {
+    if (!copySourceYearId || !copyRows.length) return message.warning("Conservez au moins une attribution.");
+    const combinations = copyRows.map((item) => `${item.classId}:${item.courseId}`);
+    if (new Set(combinations).size !== combinations.length) {
+      return message.warning("Une même combinaison classe/cours apparaît plusieurs fois. Retirez ou modifiez le doublon.");
+    }
+    setCopyLoading(true);
+    try {
+      const response = await api.post<{ created: number; skipped: number; targetYear: string }>("/course-assignments/copy", { sourceYearId: Number(copySourceYearId), assignments: copyRows.map(({ classId, courseId, teacherId, weight }) => ({ classId: Number(classId), courseId: Number(courseId), teacherId: Number(teacherId), weight })) });
+      message.success(`${response.data.created} attribution(s) appliquée(s) à ${response.data.targetYear}${response.data.skipped ? `, ${response.data.skipped} déjà existante(s)` : ""}.`);
+      setCopyOpen(false); await loadData(true);
+    } catch (error) { message.error(errorMessage(error, "Reprise des attributions impossible.")); }
+    finally { setCopyLoading(false); }
+  };
+
   const saveBulk = async () => {
     const values = await bulkForm.validateFields();
     const items = (values.items ?? []).filter((item) =>
@@ -433,6 +481,27 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     setIsModalOpen(true);
   };
 
+  const deleteHomeroomWithGradebook = (row: DirectoryRow) => {
+    Modal.confirm({
+      centered: true,
+      title: `Supprimer le titulaire et toute la grille de ${row.primary} ?`,
+      content: "Cette action supprime définitivement toutes les cotes, tous les résultats calculés et les validations de cette classe pour l’année en cours. Utilisez plutôt « Modifier » pour simplement remplacer le titulaire et conserver la grille.",
+      okText: "Supprimer toute la grille",
+      cancelText: "Annuler",
+      okButtonProps: { danger: true },
+      async onOk() {
+        try {
+          await api.delete(`/homeroom-assignments/${row.key}/with-gradebook`);
+          await loadData();
+          message.success("Le titulaire et toute sa grille ont été supprimés.");
+        } catch (error) {
+          message.error(errorMessage(error, "Suppression de la grille impossible."));
+          throw error;
+        }
+      },
+    });
+  };
+
   const save = async () => {
     const values = await form.validateFields();
     setIsSaving(true);
@@ -446,12 +515,19 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           await api.post("/classes", { label: values.name });
         }
       } else if (kind === "teachers") {
-        await api.post("/teachers", {
+        const response = await api.post<{ matricule: string; temporaryPassword: string }>("/teachers", {
           lastName: values.name,
           firstName: values.firstName,
           gender: values.gender,
           phone: values.phone,
           photo,
+        });
+        Modal.success({
+          centered: true,
+          title: "Compte professeur créé",
+          className: "academic-directory__credentials-modal",
+          content: <div className="academic-directory__credentials"><p>Communiquez ces accès au professeur.</p><div><span>Matricule</span><strong>{response.data.matricule}</strong></div><div><span>Mot de passe temporaire</span><strong>{response.data.temporaryPassword}</strong></div></div>,
+          okText: "J’ai noté les accès",
         });
       } else if (kind === "courses") {
         if (editingRow) {
@@ -493,16 +569,15 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             content: (
               <div className="academic-directory__credentials">
                 <p>
-                  Communiquez ces accès au professeur. Le mot de passe ne sera
-                  plus affiché ensuite.
+                  Le titulaire utilise son compte professeur unique.
                 </p>
                 <div>
                   <span>Code de connexion</span>
                   <strong>{response.data.loginCode}</strong>
                 </div>
                 <div>
-                  <span>Mot de passe temporaire</span>
-                  <strong>{response.data.temporaryPassword}</strong>
+                  <span>Mot de passe</span>
+                  <strong>{response.data.temporaryPassword || "Mot de passe professeur actuel inchangé"}</strong>
                 </div>
               </div>
             ),
@@ -581,6 +656,16 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           throw error;
         }
       },
+    });
+  };
+
+  const resetTeacherPassword = (row: DirectoryRow) => {
+    resetPasswordForm.resetFields();
+    Modal.confirm({
+      title: `Modifier le mot de passe · ${row.primary}`,
+      content: <Form form={resetPasswordForm} layout="vertical" className="academic-directory__password-form"><p>Le matricule <strong>{row.matricule}</strong> restera inchangé. Définissez uniquement un nouveau mot de passe.</p><Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}><Input.Password /></Form.Item><Form.Item name="confirmation" label="Confirmer" dependencies={["password"]} rules={[{ required: true, message: "Confirmez le mot de passe." }, ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue("password") === value ? Promise.resolve() : Promise.reject(new Error("Les mots de passe ne correspondent pas.")); } })]}><Input.Password /></Form.Item></Form>,
+      okText: "Enregistrer", cancelText: "Annuler", centered: true,
+      async onOk() { const values = await resetPasswordForm.validateFields(); const response = await api.post<{ matricule: string }>(`/teachers/${row.key}/reset-password`, { password: values.password }); message.success(`Accès enregistré. Matricule : ${response.data.matricule}`); await loadData(); },
     });
   };
 
@@ -677,6 +762,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             columns={[
               { title: "Cours", dataIndex: "course" },
               { title: "Classe", dataIndex: "className" },
+              { title: "Année scolaire", dataIndex: "schoolYear", render: (value, item) => <span>{value} · {item.schoolYearStatus === "ARCHIVEE" ? "Archivée" : item.schoolYearStatus === "EN_COURS" ? "En cours" : item.schoolYearStatus}</span> },
               { title: "Professeur", dataIndex: "teacher" },
               { title: "Début", render: (_, item) => dayjs(item.startDate).format("DD/MM/YYYY") },
               { title: "Fin", render: (_, item) => item.endDate ? dayjs(item.endDate).format("DD/MM/YYYY") : "En cours" },
@@ -733,6 +819,26 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           },
         ]
       : []),
+    ...(kind === "teachers"
+      ? [
+          {
+            title: "Matricule de connexion",
+            key: "matricule",
+            width: 190,
+            render: (_: unknown, row: DirectoryRow) =>
+              row.matricule ? (
+                <Typography.Text
+                  copyable={{ text: row.matricule }}
+                  className="academic-directory__teacher-code"
+                >
+                  {row.matricule}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">Non attribué</Typography.Text>
+              ),
+          },
+        ]
+      : []),
     ...(kind === "assignments"
       ? [
           {
@@ -776,13 +882,17 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                   </Button>
                 )}
                 {kind === "homeroom" && (
-                  <Button
-                    type="text"
-                    icon={<ReloadOutlined />}
-                    onClick={() => resetHomeroomPassword(row)}
-                  >
-                    Réinitialiser
-                  </Button>
+                  <>
+                    <Button type="text" icon={<ReloadOutlined />} onClick={() => resetHomeroomPassword(row)}>
+                      Réinitialiser
+                    </Button>
+                    <Button danger type="text" icon={<DeleteOutlined />} onClick={() => deleteHomeroomWithGradebook(row)}>
+                      Supprimer la grille
+                    </Button>
+                  </>
+                )}
+                {kind === "teachers" && (
+                  <Button type="text" icon={<ReloadOutlined />} onClick={() => resetTeacherPassword(row)}>Mot de passe</Button>
                 )}
               </div>
             ),
@@ -843,9 +953,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
         </div>
         <Space wrap>
           {kind === "assignments" && (
-            <Button icon={<HistoryOutlined />} onClick={() => void showAssignmentHistory()}>
-              Historique
-            </Button>
+            <><Button icon={<CopyOutlined />} onClick={() => void openCopyAssignments()}>Reprendre une année</Button><Button icon={<HistoryOutlined />} onClick={() => void showAssignmentHistory()}>Historique</Button></>
           )}
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             {content.addLabel}
@@ -1139,6 +1247,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                   rules={[{ required: true, message: "Choisissez la classe." }]}
                 >
                   <Select
+                    disabled={Boolean(editingRow)}
                     showSearch
                     optionFilterProp="label"
                     placeholder="Sélectionner une classe"
@@ -1150,6 +1259,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
                       disabled: occupiedHomeroomClasses.has(item.id),
                     }))}
                   />
+                  {editingRow && <Typography.Text type="secondary">La classe reste liée à sa grille. Pour changer de titulaire, choisissez seulement un autre professeur.</Typography.Text>}
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -1177,6 +1287,17 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
             </Row>
           )}
         </Form>
+      </Modal>
+      <Modal width={1050} centered open={copyOpen} title="Reprendre les attributions d’une année scolaire" okText={`Appliquer à ${copyPreview?.targetYear.label ?? "l’année actuelle"}`} cancelText="Annuler" confirmLoading={copyLoading} okButtonProps={{ disabled: !copyPreview || !copyRows.length }} onOk={() => void applyCopiedAssignments()} onCancel={() => !copyLoading && setCopyOpen(false)} rootClassName="copy-assignments-modal">
+        <p className="copy-assignments-modal__intro">Choisissez l’année source, modifiez les lignes nécessaires, puis appliquez-les à l’année actuelle. L’historique reste intact.</p>
+        <Select loading={copyLoading} value={copySourceYearId} onChange={(value) => void loadCopyPreview(value)} placeholder="Choisir l’année précédente" style={{ width: "100%", marginBottom: 16 }} options={copyYears.filter((item) => !item.isActive).map((item) => ({ value: item.id, label: `${item.label} · ${item.status === "ARCHIVEE" ? "Archivée" : item.status}` }))} />
+        {copyPreview && <><Alert showIcon type="info" message={`${copyPreview.sourceYear.label} → ${copyPreview.targetYear.label}`} style={{ marginBottom: 14 }} /><Table rowKey="sourceAssignmentId" size="small" pagination={false} scroll={{ x: 900, y: 390 }} dataSource={copyRows} columns={[
+          { title: "Classe", width: 210, render: (_, row) => <Select value={row.classId} style={{ width: "100%" }} options={classes.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setCopyRows((current) => current.map((item) => item.sourceAssignmentId === row.sourceAssignmentId ? { ...item, classId: value } : item))} /> },
+          { title: "Cours", width: 220, render: (_, row) => <Select value={row.courseId} style={{ width: "100%" }} options={courses.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setCopyRows((current) => current.map((item) => item.sourceAssignmentId === row.sourceAssignmentId ? { ...item, courseId: value } : item))} /> },
+          { title: "Professeur", width: 240, render: (_, row) => <Select value={row.teacherId} style={{ width: "100%" }} options={teachers.map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setCopyRows((current) => current.map((item) => item.sourceAssignmentId === row.sourceAssignmentId ? { ...item, teacherId: value } : item))} /> },
+          { title: "Pondération", width: 120, render: (_, row) => <InputNumber min={1} precision={0} value={row.weight} style={{ width: "100%" }} onChange={(value) => value && setCopyRows((current) => current.map((item) => item.sourceAssignmentId === row.sourceAssignmentId ? { ...item, weight: value } : item))} /> },
+          { title: "", width: 55, render: (_, row) => <Button danger type="text" icon={<DeleteOutlined />} onClick={() => setCopyRows((current) => current.filter((item) => item.sourceAssignmentId !== row.sourceAssignmentId))} /> },
+        ]} /></>}
       </Modal>
 
       <Modal

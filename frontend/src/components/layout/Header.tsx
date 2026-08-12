@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout, Dropdown, Avatar, Badge, Button, Empty, Popover, Space, Spin, Typography } from "antd";
 import {
@@ -31,6 +31,10 @@ const Header: React.FC = () => {
   const [gradeSubmissions, setGradeSubmissions] = useState<Array<{
     id: string; className: string; teacherName: string; periodName: string; submittedAt: string; status: string;
   }>>([]);
+  const [liveGradeNotice, setLiveGradeNotice] = useState<{
+    id: string; className: string; teacherName: string; periodName: string;
+  } | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
   const isDirector = user?.role === "director";
   const isSuperAdmin = user?.role === "super_admin";
   const isStudent = user?.role === "student";
@@ -58,18 +62,46 @@ const Header: React.FC = () => {
     const load = async () => {
       try {
         const response = await api.get<typeof gradeSubmissions>("/grade-submissions");
-        if (active) setGradeSubmissions(response.data.filter((item) => item.status === "SUBMITTED"));
-      } catch { if (active) setGradeSubmissions([]); }
+        const pending = response.data.filter((item) => item.status === "SUBMITTED");
+        if (active) setGradeSubmissions(pending);
+        return pending;
+      } catch {
+        if (active) setGradeSubmissions([]);
+        return [];
+      }
     };
     void load();
     const events = new EventSource(`${API_URL}/grade-submissions/events`, {
       withCredentials: true,
     });
-    events.onmessage = () => {
-      void load();
-      window.dispatchEvent(new Event("grade-submissions-updated"));
+    events.onmessage = (event) => {
+      try {
+        const update = JSON.parse(event.data) as {
+          action?: string;
+          submissionId?: string;
+        };
+        if (!update.action || update.action === "heartbeat") return;
+        void load().then((pending) => {
+          if (!active || update.action !== "submitted") return;
+          const submission = pending.find((item) => item.id === update.submissionId);
+          if (!submission) return;
+          setLiveGradeNotice(submission);
+          if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+          noticeTimerRef.current = window.setTimeout(() => {
+            setLiveGradeNotice(null);
+            noticeTimerRef.current = null;
+          }, 6000);
+        });
+        window.dispatchEvent(new Event("grade-submissions-updated"));
+      } catch {
+        // Les battements ou événements invalides ne créent aucune notification.
+      }
     };
-    return () => { active = false; events.close(); };
+    return () => {
+      active = false;
+      events.close();
+      if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    };
   }, [isDirector]);
   const schoolName = isDirector
     ? user?.lastName || "Votre établissement"
@@ -162,6 +194,26 @@ const Header: React.FC = () => {
   );
 
   return (
+    <>
+    {isDirector && liveGradeNotice && (
+      <button
+        type="button"
+        className="director-live-grade-notice"
+        onClick={() => {
+          setLiveGradeNotice(null);
+          navigate(ROUTES.GRADE_APPROVALS);
+        }}
+        aria-label={`Nouvelle grille envoyée par ${liveGradeNotice.teacherName}`}
+      >
+        <span className="director-live-grade-notice__icon"><BellFilled /></span>
+        <span className="director-live-grade-notice__copy">
+          <small>Nouvelle notification</small>
+          <strong>Cotes envoyées · {liveGradeNotice.className}</strong>
+          <span>{liveGradeNotice.teacherName} · {liveGradeNotice.periodName}</span>
+        </span>
+        <i aria-hidden="true" />
+      </button>
+    )}
     <AntHeader
       style={{
         padding: "0 18px",
@@ -240,6 +292,7 @@ const Header: React.FC = () => {
         </Space>
       )}
     </AntHeader>
+    </>
   );
 };
 

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AuditOutlined, CheckCircleOutlined, ReloadOutlined, UnlockOutlined } from "@ant-design/icons";
+import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined, UnlockOutlined } from "@ant-design/icons";
 import { Button, Card, Input, Modal, Space, Table, Tag, Typography, message } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
+import { API_URL } from "../../../config/constants";
 
-type SubmissionStatus = "SUBMITTED" | "APPROVED" | "REOPENED";
+type SubmissionStatus = "SUBMITTED" | "APPROVED" | "REOPENED" | "REJECTED";
 
 interface GradeSubmission {
   id: string;
@@ -13,6 +14,7 @@ interface GradeSubmission {
   periodName: string;
   submittedAt: string;
   status: SubmissionStatus;
+  rejectionComment?: string | null;
 }
 
 const getError = (error: unknown) =>
@@ -24,19 +26,56 @@ export default function GradeApprovalsPage() {
   const [items, setItems] = useState<GradeSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [rejectedItem, setRejectedItem] = useState<GradeSubmission | null>(null);
+  const [rejectionComment, setRejectionComment] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try { setItems((await api.get<GradeSubmission[]>("/grade-submissions")).data); }
-    catch (error) { message.error(getError(error)); }
-    finally { setLoading(false); }
+    catch (error) { if (!silent) message.error(getError(error)); }
+    finally { if (!silent) setLoading(false); }
   };
 
   useEffect(() => {
     void load();
-    const refresh = () => void load();
+    let active = true;
+    let fallbackInterval: number | undefined;
+    const refresh = () => { if (active) void load(true); };
+    const events = new EventSource(`${API_URL}/grade-submissions/events`, {
+      withCredentials: true,
+    });
+
+    events.onmessage = (event) => {
+      try {
+        const update = JSON.parse(event.data) as { action?: string };
+        if (update.action && update.action !== "heartbeat") refresh();
+      } catch {
+        // Un événement mal formé ne doit pas interrompre le flux suivant.
+      }
+    };
+    events.onerror = () => {
+      // EventSource se reconnecte automatiquement. Ce contrôle silencieux couvre
+      // aussi les proxys qui retardent les événements SSE.
+      if (!fallbackInterval) {
+        fallbackInterval = window.setInterval(refresh, 5000);
+      }
+    };
+    events.onopen = () => {
+      if (fallbackInterval) {
+        window.clearInterval(fallbackInterval);
+        fallbackInterval = undefined;
+      }
+      refresh();
+    };
+
     window.addEventListener("grade-submissions-updated", refresh);
-    return () => window.removeEventListener("grade-submissions-updated", refresh);
+    return () => {
+      active = false;
+      events.close();
+      if (fallbackInterval) window.clearInterval(fallbackInterval);
+      window.removeEventListener("grade-submissions-updated", refresh);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -65,6 +104,21 @@ export default function GradeApprovalsPage() {
     });
   };
 
+  const reject = async () => {
+    if (!rejectedItem) return;
+    const comment = rejectionComment.trim();
+    if (comment.length < 3) return void message.warning("Veuillez expliquer la raison du rejet.");
+    setRejecting(true);
+    try {
+      await api.patch(`/grade-submissions/${rejectedItem.id}/reject`, { comment });
+      message.success("Grille rejetée et commentaire envoyé au titulaire.");
+      setRejectedItem(null);
+      setRejectionComment("");
+      await load();
+    } catch (error) { message.error(getError(error)); }
+    finally { setRejecting(false); }
+  };
+
   return (
     <section className="grade-approvals-page">
       <Card
@@ -72,7 +126,7 @@ export default function GradeApprovalsPage() {
         extra={<Button icon={<ReloadOutlined />} onClick={() => void load()}>Actualiser</Button>}
       >
         <Typography.Paragraph type="secondary">
-          Approuvez les grilles envoyées par les titulaires ou rouvrez une grille approuvée pour permettre une correction.
+          Approuvez les grilles reçues ou rejetez-les avec un commentaire pour demander une correction au titulaire.
         </Typography.Paragraph>
         <Input.Search value={search} onChange={(event) => setSearch(event.target.value)} allowClear placeholder="Titulaire, classe ou période..." style={{ maxWidth: 420, marginBottom: 18 }} />
         <Table
@@ -86,11 +140,16 @@ export default function GradeApprovalsPage() {
             { title: "Classe", dataIndex: "className" },
             { title: "Période", dataIndex: "periodName" },
             { title: "Envoyée le", render: (_, item) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.submittedAt)) },
-            { title: "Statut", render: (_, item) => <Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : "OUVERTE"}</Tag> },
-            { title: "Action", align: "right", render: (_, item) => item.status === "SUBMITTED" ? <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : <Tag color="processing">Correction autorisée</Tag> },
+            { title: "Statut", render: (_, item) => <Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : item.status === "REJECTED" ? "red" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : item.status === "REJECTED" ? "REJETÉE" : "OUVERTE"}</Tag> },
+            { title: "Commentaire", render: (_, item) => item.rejectionComment ? <Typography.Text type="danger">{item.rejectionComment}</Typography.Text> : "—" },
+            { title: "Action", align: "right", render: (_, item) => item.status === "SUBMITTED" ? <Space><Button danger icon={<CloseCircleOutlined />} onClick={() => { setRejectedItem(item); setRejectionComment(""); }}>Rejeter</Button><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button></Space> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : item.status === "REJECTED" ? <Tag color="error">Correction demandée</Tag> : <Tag color="processing">Correction autorisée</Tag> },
           ]}
         />
       </Card>
+      <Modal centered open={Boolean(rejectedItem)} title={<Space><CloseCircleOutlined style={{ color: "#dc2626" }} /><span>Rejeter la grille de {rejectedItem?.className}</span></Space>} okText="Rejeter et envoyer" cancelText="Annuler" okButtonProps={{ danger: true, loading: rejecting, disabled: rejectionComment.trim().length < 3 }} onOk={() => void reject()} onCancel={() => { if (!rejecting) { setRejectedItem(null); setRejectionComment(""); } }} rootClassName="grade-rejection-modal">
+        <Typography.Paragraph type="secondary">Le titulaire verra immédiatement ce commentaire et pourra corriger sa grille.</Typography.Paragraph>
+        <Input.TextArea autoFocus value={rejectionComment} onChange={(event) => setRejectionComment(event.target.value)} placeholder="Expliquez clairement les corrections demandées…" maxLength={500} showCount rows={4} />
+      </Modal>
     </section>
   );
 }

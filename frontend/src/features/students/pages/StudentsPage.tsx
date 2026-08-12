@@ -15,6 +15,7 @@ import {
   PhoneOutlined,
   UploadOutlined,
   UserOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import {
   Avatar,
@@ -77,6 +78,9 @@ interface SchoolYearOption {
   status: string;
 }
 
+interface ReenrollmentRow { enrollmentId: string; studentId: string; matricule: string; name: string; sourceClass: string; classId: string; orderNumber?: number | null; }
+interface ReenrollmentPreview { sourceYear: { id: string; label: string }; targetYear: { id: string; label: string }; students: ReenrollmentRow[]; }
+
 const initialStudents: StudentRow[] = [];
 
 interface StudentDateValue {
@@ -127,6 +131,11 @@ const StudentsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form] = Form.useForm<StudentFormValues>();
+  const [reenrollOpen, setReenrollOpen] = useState(false);
+  const [reenrollSourceYearId, setReenrollSourceYearId] = useState<string>();
+  const [reenrollPreview, setReenrollPreview] = useState<ReenrollmentPreview | null>(null);
+  const [reenrollRows, setReenrollRows] = useState<ReenrollmentRow[]>([]);
+  const [reenrollLoading, setReenrollLoading] = useState(false);
 
   const buildStudentPayload = (
     values: StudentDraftValues,
@@ -415,6 +424,21 @@ const StudentsPage = () => {
     }
   };
 
+  const openReenrollment = () => { setReenrollOpen(true); setReenrollSourceYearId(undefined); setReenrollPreview(null); setReenrollRows([]); };
+  const loadReenrollmentPreview = async (yearId: string) => {
+    setReenrollSourceYearId(yearId); setReenrollLoading(true);
+    try { const preview = (await api.get<ReenrollmentPreview>(`/students/reenrollment-preview/${yearId}`)).data; setReenrollPreview(preview); setReenrollRows(preview.students); }
+    catch (error) { setReenrollPreview(null); setReenrollRows([]); message.error(getApiErrorMessage(error, "Aperçu des élèves impossible.")); }
+    finally { setReenrollLoading(false); }
+  };
+  const applyReenrollment = async () => {
+    if (!reenrollSourceYearId || !reenrollRows.length) return message.warning("Conservez au moins un élève.");
+    setReenrollLoading(true);
+    try { const response = await api.post<{ created: number; skipped: number; targetYear: string }>("/students/reenroll", { sourceYearId: Number(reenrollSourceYearId), students: reenrollRows.map((item) => ({ studentId: Number(item.studentId), classId: Number(item.classId), ...(item.orderNumber ? { orderNumber: item.orderNumber } : {}) })) }); message.success(`${response.data.created} élève(s) réinscrit(s) en ${response.data.targetYear}${response.data.skipped ? `, ${response.data.skipped} déjà inscrit(s)` : ""}.`); setReenrollOpen(false); await loadStudents(true); }
+    catch (error) { message.error(getApiErrorMessage(error, "Réinscription impossible.")); }
+    finally { setReenrollLoading(false); }
+  };
+
   const columns = [
     {
       title: "Élève",
@@ -486,6 +510,7 @@ const StudentsPage = () => {
           <p>Consultez et gérez les élèves de votre établissement.</p>
         </div>
         <div className="students-directory__hero-action">
+          <Button icon={<CopyOutlined />} onClick={openReenrollment}>Réinscrire depuis une année</Button>
           <Button
             icon={<UploadOutlined />}
             onClick={() => setIsImportOpen(true)}
@@ -510,6 +535,17 @@ const StudentsPage = () => {
         onClose={() => setIsImportOpen(false)}
         onImported={() => loadStudents()}
       />
+      <Modal width={1000} centered open={reenrollOpen} title="Réinscrire les élèves d’une ancienne année" okText={`Réinscrire en ${reenrollPreview?.targetYear.label ?? "année actuelle"}`} cancelText="Annuler" confirmLoading={reenrollLoading} okButtonProps={{ disabled: !reenrollPreview || !reenrollRows.length }} onOk={() => void applyReenrollment()} onCancel={() => !reenrollLoading && setReenrollOpen(false)} rootClassName="student-reenrollment-modal">
+        <p className="student-reenrollment-modal__intro">Le dossier et le matricule restent inchangés. Choisissez la nouvelle classe ou retirez les élèves qui ne doivent pas être réinscrits.</p>
+        <Select value={reenrollSourceYearId} onChange={(value) => void loadReenrollmentPreview(value)} placeholder="Choisir l’année précédente" style={{ width: "100%", marginBottom: 16 }} options={schoolYears.filter((year) => !year.isActive).map((year) => ({ value: year.id, label: `${year.label} · ${year.status === "ARCHIVEE" ? "Archivée" : year.status}` }))} />
+        {reenrollPreview && <><Alert showIcon type="info" message={`${reenrollPreview.sourceYear.label} → ${reenrollPreview.targetYear.label}`} style={{ marginBottom: 14 }} /><Table rowKey="studentId" size="small" pagination={false} scroll={{ x: 800, y: 410 }} dataSource={reenrollRows} columns={[
+          { title: "Élève", render: (_, row) => <div><strong>{row.name}</strong><br/><small>{row.matricule}</small></div> },
+          { title: "Ancienne classe", dataIndex: "sourceClass", width: 180 },
+          { title: "Nouvelle classe", width: 230, render: (_, row) => <Select value={row.classId} style={{ width: "100%" }} options={classes.filter((item) => item.isActive).map((item) => ({ value: item.id, label: item.label }))} onChange={(value) => setReenrollRows((current) => current.map((item) => item.studentId === row.studentId ? { ...item, classId: value } : item))} /> },
+          { title: "N°", width: 85, render: (_, row) => <Input type="number" min={1} value={row.orderNumber ?? ""} onChange={(event) => setReenrollRows((current) => current.map((item) => item.studentId === row.studentId ? { ...item, orderNumber: event.target.value ? Number(event.target.value) : null } : item))} /> },
+          { title: "", width: 55, render: (_, row) => <Button danger type="text" icon={<DeleteOutlined />} onClick={() => setReenrollRows((current) => current.filter((item) => item.studentId !== row.studentId))} /> },
+        ]} /></>}
+      </Modal>
 
       <div className="students-directory__student-password" role="note">
         <span className="students-directory__student-password-icon">

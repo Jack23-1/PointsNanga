@@ -6,7 +6,8 @@ export const ROUTES = {
   SUPER_ADMIN_LOGIN: '/admin/login',
   SUPER_ADMIN_RESET_PASSWORD: '/admin/reset-password',
   DIRECTOR_LOGIN: '/director/login',
-  HOMEROOM_LOGIN: '/titulaire/login',
+  TEACHER_LOGIN: '/enseignant/login',
+  HOMEROOM_LOGIN: '/enseignant/login',
   DASHBOARD: '/dashboard',
   SCHOOLS: '/schools',
   STUDENTS: '/students',
@@ -20,6 +21,7 @@ export const ROUTES = {
   GRADE_APPROVALS: '/grade-approvals',
   DELETION_REQUESTS: '/deletion-requests',
   GRADES: '/grades',
+  TEACHER_COURSES: '/mes-cotes',
   RESULTS: '/results',
   BULLETINS: '/bulletins',
   SETTINGS: '/settings',
@@ -28,13 +30,13 @@ export const ROUTES = {
 export const ROLE_ROUTES = {
   super_admin: ['/dashboard', '/schools', '/deletion-requests', '/settings'],
   director: ['/dashboard', '/students', '/classes', '/teachers', '/courses', '/homeroom-teachers', '/course-assignments', '/school-years', '/academic-library', '/grade-approvals', '/results', '/settings'],
-  teacher: ['/dashboard', '/grades', '/results'],
+  teacher: ['/dashboard', '/grades', '/mes-cotes', '/results'],
   student: ['/dashboard', '/results', '/bulletins'],
 } as const;
 
 export const getLoginRouteForRole = (role?: string) => {
   if (role === 'super_admin') return ROUTES.SUPER_ADMIN_LOGIN;
   if (role === 'director') return ROUTES.DIRECTOR_LOGIN;
-  if (role === 'teacher') return ROUTES.HOMEROOM_LOGIN;
+  if (role === 'teacher') return ROUTES.TEACHER_LOGIN;
   return ROUTES.LOGIN;
 };

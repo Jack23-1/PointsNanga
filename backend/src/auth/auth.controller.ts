@@ -1,11 +1,16 @@
 import { Body, Controller, Post, Req, Res, UnauthorizedException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { AuthService } from "./auth.service";
-import { ForgotPasswordDto, LoginDto, ResetPasswordDto } from "./dto/login.dto";
+import { ForgotPasswordDto, LoginDto, ResetPasswordDto, ResolveSchoolDto } from "./dto/login.dto";
 
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post("resolve-school")
+  resolveSchool(@Body() dto: ResolveSchoolDto) {
+    return this.authService.resolveSchool(dto.role, dto.identifier);
+  }
 
   @Post("login")
   async login(

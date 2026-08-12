@@ -2,15 +2,12 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BankOutlined,
-  CheckOutlined,
   DownOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   LockOutlined,
   MailOutlined,
   SafetyCertificateOutlined,
-  SearchOutlined,
-  StopOutlined,
 } from "@ant-design/icons";
 import { ROUTES } from "../../../config/constants";
 import { useAuth } from "../../../hooks/useAuth";
@@ -28,105 +25,55 @@ const directorAdSlides = [
   classroomPhoto,
 ];
 
-type SchoolOption = {
-  id: string;
-  name: string;
-  logo?: string | null;
-  isActive: boolean;
-};
+type ResolvedSchool = { name: string; logo?: string | null };
 
 export default function DirectorLogin() {
   const navigate = useNavigate();
   const { updateUser } = useAuth();
-  const [schoolName, setSchoolName] = useState("");
-  const [schools, setSchools] = useState<SchoolOption[]>([]);
   const [schoolCode, setSchoolCode] = useState("");
+  const [resolvedSchool, setResolvedSchool] = useState<ResolvedSchool | null>(null);
+  const [isResolvingSchool, setIsResolvingSchool] = useState(false);
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isSchoolMenuOpen, setIsSchoolMenuOpen] = useState(false);
-  const [schoolSearch, setSchoolSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isPageTransitioning, setIsPageTransitioning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const selectedSchool = schools.find((school) => school.name === schoolName);
-  const schoolPickerRef = useRef<HTMLDivElement>(null);
-  const schoolTriggerRef = useRef<HTMLButtonElement>(null);
-  const schoolSearchRef = useRef<HTMLInputElement>(null);
   const directorCardRef = useRef<HTMLElement>(null);
   const monitorShowcaseRef = useRef<HTMLDivElement>(null);
 
-  const normalizedSchoolSearch = schoolSearch
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr");
-  const filteredDirectorSchools = schools.filter((school) =>
-    school.name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("fr")
-      .includes(normalizedSchoolSearch),
-  );
-
   useEffect(() => {
-    let isMounted = true;
-
-    const loadSchools = () => {
-      api
-        .get<SchoolOption[]>("/schools")
-        .then((response) => {
-          if (isMounted) setSchools(response.data);
-        })
-        .catch(() => {
-          if (isMounted) setSchools([]);
-        });
-    };
-
-    loadSchools();
-    const intervalId = window.setInterval(loadSchools, 1000);
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isSchoolMenuOpen) return;
-
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!schoolPickerRef.current?.contains(event.target as Node)) {
-        setIsSchoolMenuOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsSchoolMenuOpen(false);
-        schoolTriggerRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [isSchoolMenuOpen]);
-
-  useEffect(() => {
-    if (!isSchoolMenuOpen) {
-      setSchoolSearch("");
+    const identifier = schoolCode.trim().toUpperCase();
+    let cancelled = false;
+    setResolvedSchool(null);
+    if (!/^PG[1-9A-Z]{9}$/.test(identifier)) {
+      setIsResolvingSchool(false);
       return;
     }
 
-    const focusFrame = window.requestAnimationFrame(() => {
-      schoolSearchRef.current?.focus();
-    });
+    setIsResolvingSchool(true);
+    const timeoutId = window.setTimeout(() => {
+      api
+        .post<{ school: ResolvedSchool | null }>("/auth/resolve-school", {
+          role: "director",
+          identifier,
+        })
+        .then((response) => {
+          if (!cancelled) setResolvedSchool(response.data.school);
+        })
+        .catch(() => {
+          if (!cancelled) setResolvedSchool(null);
+        })
+        .finally(() => {
+          if (!cancelled) setIsResolvingSchool(false);
+        });
+    }, 250);
 
-    return () => window.cancelAnimationFrame(focusFrame);
-  }, [isSchoolMenuOpen]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [schoolCode]);
 
   useEffect(() => {
     const card = directorCardRef.current;
@@ -154,7 +101,7 @@ export default function DirectorLogin() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!schoolName || !schoolCode.trim() || !password) {
+    if (!schoolCode.trim() || !password) {
       setErrorMsg("Veuillez renseigner tous les champs obligatoires.");
       return;
     }
@@ -166,7 +113,6 @@ export default function DirectorLogin() {
     try {
       const response = await api.post<AuthResponse>("/auth/login", {
         role: "director",
-        schoolName,
         matricule: schoolCode.trim().toUpperCase(),
         password,
       });
@@ -220,166 +166,37 @@ export default function DirectorLogin() {
                 </div>
               )}
 
-              <div className="premium-login__field">
-                <label htmlFor="director-school">
-                  Établissement <span aria-hidden="true">*</span>
-                </label>
-                <div
-                  ref={schoolPickerRef}
-                  className="premium-login__director-school-picker"
-                >
-                  <button
-                    id="director-school"
-                    ref={schoolTriggerRef}
-                    type="button"
-                    disabled={isLoading}
-                    className="premium-login__director-school-trigger"
-                    aria-haspopup="listbox"
-                    aria-expanded={isSchoolMenuOpen}
-                    aria-controls="director-school-options"
-                    aria-required="true"
-                    onClick={() => setIsSchoolMenuOpen((isOpen) => !isOpen)}
-                  >
-                    <span className="premium-login__director-school-icon">
-                      {selectedSchool?.logo ? (
-                        <img src={selectedSchool.logo} alt="" />
-                      ) : (
-                        <BankOutlined aria-hidden="true" />
-                      )}
-                    </span>
-                    <span className="premium-login__director-school-value">
-                      <small>Établissement</small>
-                      <strong className={schoolName ? "" : "is-placeholder"}>
-                        {schoolName || "Choisir votre école"}
-                      </strong>
-                    </span>
-                    <span className="premium-login__director-school-chevron">
-                      <DownOutlined aria-hidden="true" />
-                    </span>
-                  </button>
-
-                  {isSchoolMenuOpen && (
+              {(isResolvingSchool || resolvedSchool) && (
+                <div className="premium-login__field premium-login__resolved-school-field">
+                  <label>Établissement</label>
+                  <div className="premium-login__director-school-picker">
                     <div
-                      className="premium-login__director-school-menu"
+                      className="premium-login__director-school-trigger premium-login__director-school-trigger--readonly"
+                      aria-live="polite"
+                      aria-label={resolvedSchool?.name ?? "Recherche de l’établissement"}
                     >
-                      <div className="premium-login__director-school-search">
-                        <SearchOutlined aria-hidden="true" />
-                        <input
-                          ref={schoolSearchRef}
-                          type="search"
-                          value={schoolSearch}
-                          onChange={(event) =>
-                            setSchoolSearch(event.target.value)
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "ArrowDown") {
-                              event.preventDefault();
-                              schoolPickerRef.current
-                                ?.querySelector<HTMLButtonElement>(
-                                  ".premium-login__director-school-option:not(:disabled)",
-                                )
-                                ?.focus();
-                            }
-                          }}
-                          placeholder="Rechercher une école…"
-                          aria-label="Rechercher une école"
-                          autoComplete="off"
-                        />
-                      </div>
-
-                      <div
-                        id="director-school-options"
-                        className="premium-login__director-school-options"
-                        role="listbox"
-                        aria-label="Liste des établissements"
-                      >
-                      {filteredDirectorSchools.map((school) => (
-                        <button
-                          key={school.id}
-                          type="button"
-                          role="option"
-                          disabled={!school.isActive}
-                          aria-selected={schoolName === school.name}
-                          className={`premium-login__director-school-option${
-                            schoolName === school.name ? " is-selected" : ""
-                          }${!school.isActive ? " is-suspended" : ""}`}
-                          onKeyDown={(event) => {
-                            const options =
-                              schoolPickerRef.current?.querySelectorAll<HTMLButtonElement>(
-                                ".premium-login__director-school-option:not(:disabled)",
-                              );
-                            if (!options?.length) return;
-                            const currentIndex = Array.from(options).indexOf(
-                              event.currentTarget,
-                            );
-
-                            if (event.key === "ArrowDown") {
-                              event.preventDefault();
-                              options[(currentIndex + 1) % options.length]?.focus();
-                            }
-                            if (event.key === "ArrowUp") {
-                              event.preventDefault();
-                              if (currentIndex <= 0) {
-                                schoolSearchRef.current?.focus();
-                              } else {
-                                options[currentIndex - 1]?.focus();
-                              }
-                            }
-                          }}
-                          onClick={() => {
-                            if (!school.isActive) return;
-                            setSchoolName(school.name);
-                            setIsSchoolMenuOpen(false);
-                            schoolTriggerRef.current?.focus();
-                          }}
-                        >
-                          <span className="premium-login__director-school-monogram">
-                            {school.logo ? (
-                              <img
-                                src={school.logo}
-                                alt=""
-                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                              />
-                            ) : (
-                              school.name
-                                .split(" ")
-                                .filter((word) => word.length > 2)
-                                .slice(0, 2)
-                                .map((word) => word[0])
-                                .join("")
-                            )}
-                          </span>
-                          <span>
-                            <strong>{school.name}</strong>
-                            <small>
-                              {school.isActive
-                                ? "Établissement autorisé"
-                                : "École suspendue"}
-                            </small>
-                          </span>
-                          {!school.isActive ? (
-                            <StopOutlined aria-hidden="true" />
-                          ) : schoolName === school.name && (
-                            <CheckOutlined aria-hidden="true" />
-                          )}
-                        </button>
-                      ))}
-
-                      {filteredDirectorSchools.length === 0 && (
-                        <div
-                          className="premium-login__director-school-empty"
-                          role="status"
-                        >
-                          <SearchOutlined aria-hidden="true" />
-                          <strong>Aucune école trouvée</strong>
-                          <small>Essayez avec un autre nom.</small>
-                        </div>
-                      )}
-                      </div>
+                      <span className="premium-login__director-school-icon">
+                        {resolvedSchool?.logo ? (
+                          <img src={resolvedSchool.logo} alt="" />
+                        ) : (
+                          <BankOutlined aria-hidden="true" />
+                        )}
+                      </span>
+                      <span className="premium-login__director-school-value">
+                        <small>Établissement</small>
+                        <strong className={resolvedSchool ? "" : "is-placeholder"}>
+                          {isResolvingSchool
+                            ? "Recherche de l’école…"
+                            : resolvedSchool?.name}
+                        </strong>
+                      </span>
+                      <span className="premium-login__director-school-chevron">
+                        <DownOutlined aria-hidden="true" />
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="premium-login__field premium-login__field--reveal">
                 <label htmlFor="director-email">
@@ -396,6 +213,7 @@ export default function DirectorLogin() {
                     onChange={(event) =>
                       setSchoolCode(event.target.value.toUpperCase())
                     }
+                    maxLength={11}
                     placeholder="Ex. PG2123D4ABN"
                     autoComplete="username"
                   />

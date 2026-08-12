@@ -20,6 +20,8 @@ export class SchoolsController {
   ) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("super_admin")
   findAll() {
     return this.schoolsService.findAll();
   }

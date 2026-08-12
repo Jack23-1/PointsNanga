@@ -159,6 +159,9 @@ const SchoolsPage = () => {
       phone: values.phone,
       logo: logoData,
       isActive: editingSchool ? values.isActive !== false : true,
+      ...(!editingSchool && values.password
+        ? { password: values.password }
+        : {}),
     };
 
     setIsSaving(true);
@@ -541,6 +544,63 @@ const SchoolsPage = () => {
             >
               <Input placeholder="Ex. +243 000 000 000" />
             </Form.Item>
+            {!editingSchool && (
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="Mot de passe de l’école"
+                    name="password"
+                    extra="Ce mot de passe servira à la connexion de la direction."
+                    rules={[
+                      {
+                        required: true,
+                        message: "Définissez le mot de passe de l’école.",
+                      },
+                      {
+                        min: 8,
+                        message: "Utilisez au moins 8 caractères.",
+                      },
+                      {
+                        max: 72,
+                        message: "Utilisez 72 caractères maximum.",
+                      },
+                    ]}
+                  >
+                    <Input.Password
+                      autoComplete="new-password"
+                      placeholder="Au moins 8 caractères"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="Confirmer le mot de passe"
+                    name="passwordConfirmation"
+                    dependencies={["password"]}
+                    rules={[
+                      {
+                        required: true,
+                        message: "Confirmez le mot de passe.",
+                      },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          return !value || getFieldValue("password") === value
+                            ? Promise.resolve()
+                            : Promise.reject(
+                                new Error("Les mots de passe ne correspondent pas."),
+                              );
+                        },
+                      }),
+                    ]}
+                  >
+                    <Input.Password
+                      autoComplete="new-password"
+                      placeholder="Retapez le mot de passe"
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            )}
             {editingSchool && (
               <Form.Item
                 label="Statut de l’école"
