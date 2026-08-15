@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   BookOutlined,
+  BellOutlined,
   CloudSyncOutlined,
   CheckCircleOutlined,
   LoadingOutlined,
@@ -50,6 +51,11 @@ interface Course {
   teacherName?: string | null;
 }
 
+interface TeacherRevision {
+  assignmentId: string; periodId: string; className: string; courseName: string; teacherName: string; weight: number;
+  changes: Array<{ enrollmentId: string; studentName: string; matricule: string; oldValue: number | null; newValue: number }>;
+}
+
 interface Gradebook {
   className: string;
   schoolYear: string;
@@ -58,6 +64,7 @@ interface Gradebook {
   students: Student[];
   courses: Course[];
   submissionStatus: "SUBMITTED" | "APPROVED" | "REOPENED" | "REJECTED" | null;
+  pendingTeacherRevisions?: TeacherRevision[];
   rejectionComment?: string | null;
   rejectedAt?: string | null;
   grades: {
@@ -178,6 +185,8 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     "saved" | "pending" | "saving"
   >("saved");
+  const [selectedTeacherRevision, setSelectedTeacherRevision] = useState<TeacherRevision | null>(null);
+  const [showAllTeacherRevisions, setShowAllTeacherRevisions] = useState(false);
   const editVersionRef = useRef(0);
 
   const markGradeChanged = () => {
@@ -232,6 +241,12 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     }
   };
 
+  const acceptTeacherRevision = async (assignmentId: string, periodId: string) => {
+    await api.post(`/grades/homeroom/teacher-revisions/${assignmentId}/periods/${periodId}/accept`);
+    await loadGradebook(data?.period?.id ?? periodId, true);
+    message.success("Les nouvelles cotes ont été intégrées dans votre grille.");
+  };
+
   useEffect(() => {
     void loadGradebook();
   }, []);
@@ -245,6 +260,12 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         .includes(normalized),
     );
   }, [data, query]);
+  const pendingTeacherRevisions = data?.pendingTeacherRevisions ?? [];
+  const pendingTeacherCount = new Set(pendingTeacherRevisions.map((item) => item.teacherName)).size;
+  const pendingChangesCount = pendingTeacherRevisions.reduce((total, item) => total + item.changes.length, 0);
+  const displayedTeacherRevisions = pendingTeacherCount > 3 && !showAllTeacherRevisions
+    ? pendingTeacherRevisions.filter((item, index, all) => all.findIndex((candidate) => candidate.teacherName === item.teacherName) === index).slice(0, 3)
+    : pendingTeacherRevisions;
 
   const studentSummaries = useMemo<Record<string, StudentSummary>>(() => {
     if (!data) return {};
@@ -562,7 +583,12 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     });
     events.onmessage = (event) => {
       try {
-        const update = JSON.parse(event.data) as { action?: string; comment?: string };
+        const update = JSON.parse(event.data) as { action?: string; comment?: string; assignmentId?: string; periodId?: string; courseName?: string };
+        if (update.action === "teacher_revision" && update.assignmentId && update.periodId) {
+          void loadGradebook(update.periodId, true);
+          message.warning(`Modification reçue${update.courseName ? ` pour ${update.courseName}` : ""}. Consultez les détails avant de l’accepter.`);
+          return;
+        }
         if (update.action === "approved" || update.action === "reopened" || update.action === "rejected" || update.action === "teacher_submitted") {
           if (!active) return;
           void loadGradebook(data?.period?.id, true);
@@ -730,6 +756,44 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           description={<><strong>Commentaire du directeur :</strong> {data.rejectionComment || "Veuillez corriger la grille puis la soumettre à nouveau."}</>}
         />
       )}
+      {pendingTeacherRevisions.length > 0 && (
+        <Card className="gradebook__teacher-revisions" title={<div className="gradebook__teacher-revisions-title"><span><BellOutlined /></span><div><strong>{pendingTeacherCount} professeur{pendingTeacherCount > 1 ? "s" : ""} · {pendingChangesCount} cote{pendingChangesCount > 1 ? "s" : ""} à vérifier</strong><small>Les anciennes cotes restent protégées jusqu’à votre décision.</small></div><b>{pendingTeacherRevisions.length}</b></div>}>
+          {displayedTeacherRevisions.map((revision) => (
+            <div className="gradebook__teacher-revision" key={`${revision.assignmentId}-${revision.periodId}`}>
+              <div className="gradebook__teacher-revision-content">
+                <div className="gradebook__teacher-revision-meta"><span className="is-course">{revision.courseName}</span><span className="is-class">{revision.className}</span><span className="is-count">{revision.changes.length} modification{revision.changes.length > 1 ? "s" : ""}</span></div>
+                <div className="gradebook__teacher-revision-teacher"><UserOutlined /><span>Envoyé par <b>{revision.teacherName}</b></span></div>
+                <div className="gradebook__teacher-revision-changes">
+                  {revision.changes.slice(0, 3).map((change) => (
+                    <div className="gradebook__teacher-revision-change" key={change.enrollmentId}>
+                      <span className="is-student"><b>{change.studentName}</b><small>{change.matricule}</small></span>
+                      <span className="is-old"><small>Ancienne cote</small><b>{change.oldValue ?? "—"}/{revision.weight}</b></span>
+                      <span className="is-arrow">›</span>
+                      <span className="is-new"><small>Nouvelle cote</small><b>{change.newValue}/{revision.weight}</b></span>
+                    </div>
+                  ))}
+                </div>
+                {revision.changes.length > 3 && <Button className="gradebook__teacher-revision-more" type="link" onClick={() => setSelectedTeacherRevision(revision)}>Voir les {revision.changes.length} élèves concernés</Button>}
+              </div>
+              <div className="gradebook__teacher-revision-action"><small>Vérifiez les changements avant de les appliquer.</small><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => void acceptTeacherRevision(revision.assignmentId, revision.periodId)}>Accepter et intégrer</Button></div>
+            </div>
+          ))}
+          {pendingTeacherCount > 3 && (
+            <Button block className="gradebook__teacher-revisions-toggle" onClick={() => setShowAllTeacherRevisions((value) => !value)}>
+              {showAllTeacherRevisions ? "Réduire la liste" : `Voir toutes les demandes (${pendingTeacherCount} professeurs)`}
+            </Button>
+          )}
+        </Card>
+      )}
+      <Modal open={Boolean(selectedTeacherRevision)} centered width={680} footer={null} title={selectedTeacherRevision ? `${selectedTeacherRevision.courseName} · ${selectedTeacherRevision.className}` : "Détails des modifications"} onCancel={() => setSelectedTeacherRevision(null)} rootClassName="teacher-revision-details-modal">
+        {selectedTeacherRevision && <>
+          <div className="teacher-revision-details-modal__summary"><UserOutlined /><span><small>Professeur</small><b>{selectedTeacherRevision.teacherName}</b></span><strong>{selectedTeacherRevision.changes.length} modifications</strong></div>
+          <div className="teacher-revision-details-modal__list">
+            {selectedTeacherRevision.changes.map((change, index) => <div key={change.enrollmentId}><em>{index + 1}</em><span><b>{change.studentName}</b><small>{change.matricule}</small></span><del>{change.oldValue ?? "—"}/{selectedTeacherRevision.weight}</del><i>→</i><ins>{change.newValue}/{selectedTeacherRevision.weight}</ins></div>)}
+          </div>
+          <Button block type="primary" icon={<CheckCircleOutlined />} onClick={async () => { await acceptTeacherRevision(selectedTeacherRevision.assignmentId, selectedTeacherRevision.periodId); setSelectedTeacherRevision(null); }}>Accepter et intégrer ces modifications</Button>
+        </>}
+      </Modal>
       {isLocked && (
         <Alert
           showIcon

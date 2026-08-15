@@ -132,6 +132,17 @@ export class AcademicController {
     );
   }
 
+  @Post("grades/homeroom/teacher-revisions/:assignmentId/periods/:periodId/accept")
+  @Roles("teacher")
+  acceptTeacherGradeRevision(
+    @Req() request: { user?: { titularId?: string | number } },
+    @Param("assignmentId") assignmentId: string,
+    @Param("periodId") periodId: string,
+  ) {
+    if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
+    return this.academicService.acceptTeacherGradeRevision(String(request.user.titularId), assignmentId, periodId);
+  }
+
   @Get("grades/admin/summary")
   @Roles("super_admin")
   adminGradeSummary() {

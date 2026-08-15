@@ -7,7 +7,7 @@ import { api } from "../../../lib/api";
 
 interface Assignment {
   id: string; className: string; courseClassId: string; courseName: string;
-  weight: number; schoolYear: string;
+  weight: number; schoolYear: string; isHomeroomClass?: boolean;
   periods: { id: string; name: string; number: number; isOpen: boolean }[];
 }
 interface TeacherGradebook {
@@ -88,9 +88,9 @@ export default function TeacherCoursesPage() {
           if (version) {
             await api.patch("/grades/teacher", { assignmentId: book.assignmentId, periodId: Number(book.period.id), grades: Object.entries(grades).filter((entry): entry is [string, number] => entry[1] !== undefined).map(([enrollmentId, value]) => ({ enrollmentId: Number(enrollmentId), courseClassId: Number(book.course.id), value })) });
           }
-          await api.post("/grades/teacher/submit", { assignmentId: book.assignmentId, periodId: book.period.id });
-          message.success("Les cotes ont été envoyées au titulaire.");
-          setBook((current) => current ? { ...current, isLocked: true, submissionStatus: "SUBMITTED" } : current);
+          const response = await api.post<{ revisionPending: boolean }>("/grades/teacher/submit", { assignmentId: book.assignmentId, periodId: book.period.id });
+          message.success(response.data.revisionPending ? "La modification a été envoyée au titulaire pour acceptation." : "Les cotes ont été envoyées au titulaire.");
+          setBook((current) => current ? { ...current, isLocked: false, submissionStatus: response.data.revisionPending ? "REVISION_PENDING" : "SUBMITTED" } : current);
           setVersion(0);
         } catch (error) { message.error(errorText(error)); throw error; }
         finally { setSubmitting(false); }
@@ -123,8 +123,9 @@ export default function TeacherCoursesPage() {
         <Card><CheckCircleOutlined /><span>Pondération<strong>{book.course.weight} points</strong></span></Card>
         <Tag color={book.period.isOpen && !book.isLocked ? "green" : "red"}>{book.isLocked ? "Grille verrouillée" : book.period.isOpen ? "Saisie ouverte" : "Période fermée"}</Tag>
       </div>
-      {book.isLocked && <Alert type="success" showIcon message={book.submissionStatus === "SUBMITTED" ? "Ces cotes ont été envoyées au titulaire." : "La grille a déjà été envoyée ou approuvée par le directeur."} />}
-      <Card className="teacher-courses-page__grid" title={<Space><span>{book.course.name}</span><Typography.Text type="secondary">/ {book.course.weight}</Typography.Text></Space>} extra={<Space><span className="teacher-courses-page__save"><SaveOutlined /> {saving ? "Enregistrement…" : "Brouillon automatique"}</span><Button type="primary" icon={<SendOutlined />} loading={submitting} disabled={book.isLocked || !book.period.isOpen} onClick={submitGrades}>Envoyer au titulaire</Button></Space>}>
+      {book.submissionStatus && !book.isLocked && <Alert type={book.submissionStatus === "REVISION_PENDING" ? "warning" : "success"} showIcon message={book.submissionStatus === "REVISION_PENDING" ? "Votre modification attend l’acceptation du titulaire. Vous pouvez continuer à corriger votre brouillon." : "Ces cotes ont été envoyées. Une nouvelle modification devra être acceptée par le titulaire."} />}
+      {book.isLocked && <Alert type="warning" showIcon message="La grille complète a déjà été envoyée ou approuvée par le directeur." />}
+      <Card className="teacher-courses-page__grid" title={<Space><span>{book.course.name}</span><Typography.Text type="secondary">/ {book.course.weight}</Typography.Text></Space>} extra={<Space><span className="teacher-courses-page__save"><SaveOutlined /> {saving ? "Enregistrement…" : "Brouillon automatique"}</span><Button type="primary" icon={<SendOutlined />} loading={submitting} disabled={book.isLocked || !book.period.isOpen} onClick={submitGrades}>{book.submissionStatus ? "Envoyer la modification" : "Envoyer au titulaire"}</Button></Space>}>
         <div className="teacher-courses-page__rows">
           {book.students.map((student, index) => {
             const value = grades[student.id];

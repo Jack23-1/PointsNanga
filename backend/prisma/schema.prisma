@@ -58,6 +58,19 @@ model TeacherGradeSubmission {
   @@map("teacher_grade_submissions")
 }
 
+model TeacherGradeDraft {
+  id           String   @id @default(uuid())
+  assignmentId BigInt   @map("assignment_id")
+  periodId     BigInt   @map("period_id")
+  enrollmentId BigInt   @map("enrollment_id")
+  value        Decimal  @db.Decimal(6, 2)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([assignmentId, periodId, enrollmentId])
+  @@index([assignmentId, periodId])
+  @@map("teacher_grade_drafts")
+}
+
 model SuperAdmin {
   id                  String    @id @default(uuid())
   email               String    @unique
