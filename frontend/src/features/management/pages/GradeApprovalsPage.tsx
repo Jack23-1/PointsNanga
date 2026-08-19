@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined, UnlockOutlined } from "@ant-design/icons";
-import { Button, Card, Input, Modal, Space, Table, Tag, Typography, message } from "antd";
+import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, ReloadOutlined, SaveOutlined, UnlockOutlined } from "@ant-design/icons";
+import { Button, Card, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
 import { API_URL } from "../../../config/constants";
@@ -17,6 +17,25 @@ interface GradeSubmission {
   rejectionComment?: string | null;
 }
 
+type Appreciation = "bonne" | "mauvaise" | "mediocre" | "excellente";
+
+interface DirectorGradebook {
+  className: string;
+  schoolYear: string;
+  period: { id: string; name: string };
+  students: { id: string; matricule: string; name: string; orderNumber?: number | null }[];
+  courses: { id: string; name: string; weight: number }[];
+  grades: { enrollmentId: string; courseClassId: string; value: number }[];
+  results: { enrollmentId: string; conduite?: Appreciation | null; application?: Appreciation | null }[];
+}
+
+const appreciationOptions = [
+  { value: "excellente", label: "Excellente" },
+  { value: "bonne", label: "Bonne" },
+  { value: "mediocre", label: "Médiocre" },
+  { value: "mauvaise", label: "Mauvaise" },
+];
+
 const getError = (error: unknown) =>
   axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
     ? error.response.data.message
@@ -29,6 +48,12 @@ export default function GradeApprovalsPage() {
   const [rejectedItem, setRejectedItem] = useState<GradeSubmission | null>(null);
   const [rejectionComment, setRejectionComment] = useState("");
   const [rejecting, setRejecting] = useState(false);
+  const [viewedItem, setViewedItem] = useState<GradeSubmission | null>(null);
+  const [gradebook, setGradebook] = useState<DirectorGradebook | null>(null);
+  const [gradebookLoading, setGradebookLoading] = useState(false);
+  const [gradebookSaving, setGradebookSaving] = useState(false);
+  const [gradeValues, setGradeValues] = useState<Record<string, number>>({});
+  const [appreciations, setAppreciations] = useState<Record<string, { conduite?: Appreciation; application?: Appreciation }>>({});
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -119,6 +144,52 @@ export default function GradeApprovalsPage() {
     finally { setRejecting(false); }
   };
 
+  const openGradebook = async (item: GradeSubmission) => {
+    setViewedItem(item);
+    setGradebook(null);
+    setGradebookLoading(true);
+    try {
+      const { data } = await api.get<DirectorGradebook>(`/grade-submissions/${item.id}/gradebook`);
+      setGradebook(data);
+      setGradeValues(Object.fromEntries(data.grades.map((grade) => [`${grade.enrollmentId}:${grade.courseClassId}`, grade.value])));
+      setAppreciations(Object.fromEntries(data.results.map((result) => [result.enrollmentId, {
+        conduite: result.conduite ?? undefined,
+        application: result.application ?? undefined,
+      }])));
+    } catch (error) {
+      message.error(getError(error));
+      setViewedItem(null);
+    } finally {
+      setGradebookLoading(false);
+    }
+  };
+
+  const saveGradebook = async () => {
+    if (!viewedItem || !gradebook) return;
+    setGradebookSaving(true);
+    try {
+      await api.patch(`/grade-submissions/${viewedItem.id}/gradebook`, {
+        periodId: Number(gradebook.period.id),
+        grades: Object.entries(gradeValues).map(([key, value]) => {
+          const [enrollmentId, courseClassId] = key.split(":");
+          return { enrollmentId: Number(enrollmentId), courseClassId: Number(courseClassId), value };
+        }),
+        appreciations: gradebook.students.map((student) => ({
+          enrollmentId: Number(student.id),
+          conduite: appreciations[student.id]?.conduite ?? null,
+          application: appreciations[student.id]?.application ?? null,
+        })),
+      });
+      message.success("Les modifications du directeur ont été enregistrées.");
+      await openGradebook(viewedItem);
+      await load(true);
+    } catch (error) {
+      message.error(getError(error));
+    } finally {
+      setGradebookSaving(false);
+    }
+  };
+
   return (
     <section className="grade-approvals-page">
       <Card
@@ -142,10 +213,45 @@ export default function GradeApprovalsPage() {
             { title: "Envoyée le", render: (_, item) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.submittedAt)) },
             { title: "Statut", render: (_, item) => <Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : item.status === "REJECTED" ? "red" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : item.status === "REJECTED" ? "REJETÉE" : "OUVERTE"}</Tag> },
             { title: "Commentaire", render: (_, item) => item.rejectionComment ? <Typography.Text type="danger">{item.rejectionComment}</Typography.Text> : "—" },
-            { title: "Action", align: "right", render: (_, item) => item.status === "SUBMITTED" ? <Space><Button danger icon={<CloseCircleOutlined />} onClick={() => { setRejectedItem(item); setRejectionComment(""); }}>Rejeter</Button><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button></Space> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : item.status === "REJECTED" ? <Tag color="error">Correction demandée</Tag> : <Tag color="processing">Correction autorisée</Tag> },
+            { title: "Action", align: "right", render: (_, item) => <Space wrap><Button icon={<EyeOutlined />} onClick={() => void openGradebook(item)}>Voir et modifier</Button>{item.status === "SUBMITTED" ? <><Button danger icon={<CloseCircleOutlined />} onClick={() => { setRejectedItem(item); setRejectionComment(""); }}>Rejeter</Button><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button></> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : item.status === "REJECTED" ? <Tag color="error">Correction demandée</Tag> : <Tag color="processing">Correction autorisée</Tag>}</Space> },
           ]}
         />
       </Card>
+      <Modal
+        centered
+        width="96vw"
+        open={Boolean(viewedItem)}
+        title={`Grille de cotes — ${viewedItem?.className ?? ""} · ${viewedItem?.periodName ?? ""}`}
+        okText="Enregistrer les modifications"
+        cancelText="Fermer"
+        okButtonProps={{ icon: <SaveOutlined />, loading: gradebookSaving, disabled: !gradebook }}
+        onOk={() => void saveGradebook()}
+        onCancel={() => { if (!gradebookSaving) { setViewedItem(null); setGradebook(null); } }}
+      >
+        <Table
+          rowKey="id"
+          loading={gradebookLoading}
+          dataSource={gradebook?.students ?? []}
+          pagination={false}
+          scroll={{ x: "max-content", y: "60vh" }}
+          columns={[
+            { title: "N°", width: 60, fixed: "left", render: (_value, student, index) => student.orderNumber ?? index + 1 },
+            { title: "Élève", width: 230, fixed: "left", render: (_value, student) => <><strong>{student.name}</strong><br /><Typography.Text type="secondary">{student.matricule}</Typography.Text></> },
+            ...(gradebook?.courses ?? []).map((course) => ({
+              title: <span>{course.name} <Typography.Text type="secondary">/{course.weight}</Typography.Text></span>,
+              width: 130,
+              render: (_value: unknown, student: DirectorGradebook["students"][number]) => {
+                const key = `${student.id}:${course.id}`;
+                return <InputNumber min={0} max={course.weight} precision={0} value={gradeValues[key]} onChange={(value) => {
+                  if (value !== null) setGradeValues((current) => ({ ...current, [key]: value }));
+                }} />;
+              },
+            })),
+            { title: "Conduite", width: 150, render: (_value, student) => <Select style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.conduite} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], conduite: value } }))} /> },
+            { title: "Application", width: 150, render: (_value, student) => <Select style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.application} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], application: value } }))} /> },
+          ]}
+        />
+      </Modal>
       <Modal centered open={Boolean(rejectedItem)} title={<Space><CloseCircleOutlined style={{ color: "#dc2626" }} /><span>Rejeter la grille de {rejectedItem?.className}</span></Space>} okText="Rejeter et envoyer" cancelText="Annuler" okButtonProps={{ danger: true, loading: rejecting, disabled: rejectionComment.trim().length < 3 }} onOk={() => void reject()} onCancel={() => { if (!rejecting) { setRejectedItem(null); setRejectionComment(""); } }} rootClassName="grade-rejection-modal">
         <Typography.Paragraph type="secondary">Le titulaire verra immédiatement ce commentaire et pourra corriger sa grille.</Typography.Paragraph>
         <Input.TextArea autoFocus value={rejectionComment} onChange={(event) => setRejectionComment(event.target.value)} placeholder="Expliquez clairement les corrections demandées…" maxLength={500} showCount rows={4} />

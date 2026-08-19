@@ -8,8 +8,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import { normalizeStudentMatricule } from "../students/student-matricule";
 import { LoginDto } from "./dto/login.dto";
 
-const STUDENT_RESULTS_PASSWORD = "POINTSNANGA";
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -138,7 +136,7 @@ export class AuthService {
     });
     const refreshToken = await this.jwtService.signAsync(
       { ...payload, tokenType: "refresh" },
-      { expiresIn: "7d" },
+      { expiresIn: "7d", issuer: "pointsnanga-api", audience: "pointsnanga-web", algorithm: "HS256" },
     );
 
     return { user, accessToken, refreshToken };
@@ -153,13 +151,18 @@ export class AuthService {
       tokenType?: string;
     };
     try {
-      payload = await this.jwtService.verifyAsync(refreshToken);
+      payload = await this.jwtService.verifyAsync(refreshToken, {
+        issuer: "pointsnanga-api",
+        audience: "pointsnanga-web",
+        algorithms: ["HS256"],
+      });
     } catch {
       throw new UnauthorizedException("Session expirée.");
     }
     if (payload.tokenType !== "refresh") {
       throw new UnauthorizedException("Jeton de renouvellement invalide.");
     }
+    await this.assertAccountStillActive(payload);
 
     const accessToken = await this.jwtService.signAsync({
       sub: payload.sub,
@@ -169,6 +172,31 @@ export class AuthService {
       tokenType: "access",
     });
     return { accessToken };
+  }
+
+  private async assertAccountStillActive(payload: {
+    sub: string;
+    role: string;
+    schoolId?: string;
+  }) {
+    if (payload.role === "super_admin") {
+      const account = await this.prisma.superAdmin.findFirst({ where: { id: payload.sub, isActive: true }, select: { id: true } });
+      if (!account) throw new UnauthorizedException("Compte désactivé.");
+      return;
+    }
+    if (payload.role === "director" && payload.sub.startsWith("school-")) {
+      const school = await this.prisma.ecoles.findFirst({ where: { id_ecole: BigInt(payload.sub.slice(7)), statut: "ACTIF" }, select: { id_ecole: true } });
+      if (!school) throw new UnauthorizedException("Compte désactivé.");
+      return;
+    }
+    const account = payload.role === "director"
+      ? await this.prisma.directeurs.findFirst({ where: { id_directeur: BigInt(payload.sub), statut_compte: "ACTIF", ecoles: { statut: "ACTIF" } }, select: { id_directeur: true } })
+      : payload.role === "teacher"
+        ? await this.prisma.professeurs.findFirst({ where: { id_professeur: BigInt(payload.sub), statut: "ACTIF", statut_compte: "ACTIF", ecoles: { statut: "ACTIF" } }, select: { id_professeur: true } })
+        : payload.role === "student"
+          ? await this.prisma.eleves.findFirst({ where: { id_eleve: BigInt(payload.sub), statut: "ACTIF", ecoles: { statut: "ACTIF" } }, select: { id_eleve: true } })
+          : null;
+    if (!account) throw new UnauthorizedException("Compte désactivé.");
   }
 
   private validateUser(loginDto: LoginDto) {
@@ -378,7 +406,9 @@ export class AuthService {
       throw new UnauthorizedException("Cette école est suspendue.");
     }
 
-    if (loginDto.password !== STUDENT_RESULTS_PASSWORD) {
+    const studentPassword = this.config.get<string>("STUDENT_RESULTS_PASSWORD") ??
+      (this.config.get<string>("NODE_ENV") === "production" ? "" : "POINTSNANGA");
+    if (!studentPassword || loginDto.password !== studentPassword) {
       throw new UnauthorizedException("Identifiants invalides.");
     }
 

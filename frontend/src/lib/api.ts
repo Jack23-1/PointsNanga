@@ -7,6 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 let refreshPromise: Promise<void> | null = null;
 let schoolSuspendedModalOpen = false;
+let sessionRedirectPending = false;
 
 const getResponseMessage = (error: AxiosError) => {
   const data = error.response?.data as
@@ -42,6 +43,14 @@ const clearLocalSession = () => {
   } catch {
     // Ignore inaccessible storage.
   }
+};
+
+const redirectToLogin = () => {
+  if (sessionRedirectPending) return;
+  sessionRedirectPending = true;
+  const role = getStoredRole();
+  clearLocalSession();
+  window.location.assign(getLoginRouteForRole(role));
 };
 
 const showSchoolSuspendedModal = (error: AxiosError) => {
@@ -142,7 +151,7 @@ class ApiClient {
             await refreshAccessToken();
             return this.client.request(originalRequest);
           } catch {
-            // Let the caller decide how to surface the unauthorized state.
+            redirectToLogin();
           }
         }
         return Promise.reject(error);

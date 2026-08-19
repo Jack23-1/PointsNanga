@@ -38,7 +38,11 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync(token);
+      const payload = await this.jwtService.verifyAsync(token, {
+        issuer: "pointsnanga-api",
+        audience: "pointsnanga-web",
+        algorithms: ["HS256"],
+      });
       if (payload.tokenType && payload.tokenType !== "access") {
         throw new Error("Type de jeton invalide.");
       }

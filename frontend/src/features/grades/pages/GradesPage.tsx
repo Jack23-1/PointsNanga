@@ -762,7 +762,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
             <div className="gradebook__teacher-revision" key={`${revision.assignmentId}-${revision.periodId}`}>
               <div className="gradebook__teacher-revision-content">
                 <div className="gradebook__teacher-revision-meta"><span className="is-course">{revision.courseName}</span><span className="is-class">{revision.className}</span><span className="is-count">{revision.changes.length} modification{revision.changes.length > 1 ? "s" : ""}</span></div>
-                <div className="gradebook__teacher-revision-teacher"><UserOutlined /><span>Envoyé par <b>{revision.teacherName}</b></span></div>
+                <div className="gradebook__teacher-revision-teacher"><em>{revision.teacherName.trim().charAt(0).toUpperCase()}</em><span><small>Modification envoyée par</small><b>{revision.teacherName}</b></span><i>En attente</i></div>
                 <div className="gradebook__teacher-revision-changes">
                   {revision.changes.slice(0, 3).map((change) => (
                     <div className="gradebook__teacher-revision-change" key={change.enrollmentId}>

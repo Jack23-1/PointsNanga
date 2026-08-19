@@ -62,7 +62,7 @@ export class SuperAdminsService {
       throw new ConflictException("Cet e-mail est déjà utilisé.");
     }
 
-    const passwordHash = await bcrypt.hash(createSuperAdminDto.password, 10);
+    const passwordHash = await bcrypt.hash(createSuperAdminDto.password, 12);
 
     const createdSuperAdmin = await this.prisma.superAdmin.create({
       data: {
@@ -90,7 +90,7 @@ export class SuperAdminsService {
     }
 
     const passwordHash = updateSuperAdminDto.password
-      ? await bcrypt.hash(updateSuperAdminDto.password, 10)
+      ? await bcrypt.hash(updateSuperAdminDto.password, 12)
       : undefined;
 
     const updatedSuperAdmin = await this.prisma.superAdmin.update({

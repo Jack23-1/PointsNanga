@@ -3,7 +3,6 @@ import {
   IsArray,
   ArrayMaxSize,
   IsDateString,
-  IsEmail,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -13,6 +12,8 @@ import {
   MaxLength,
   Min,
   MinLength,
+  Matches,
+  Max,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -45,6 +46,8 @@ export class CreateSchoolDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(3000000)
+  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
   logo?: string;
 
   @IsOptional()
@@ -82,6 +85,7 @@ export class CreateOptionDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   description?: string;
 }
 
@@ -137,6 +141,7 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000000)
+  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
   photo?: string;
 }
 
@@ -241,6 +246,7 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000000)
+  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
   photo?: string;
 }
 
@@ -257,6 +263,7 @@ export class ImportStudentsDto {
 export class DeleteStudentDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(72)
   password: string;
 }
 
@@ -363,12 +370,14 @@ export class SaveHomeroomGradesDto {
   periodId?: number;
 
   @IsArray()
+  @ArrayMaxSize(5000)
   @ValidateNested({ each: true })
   @Type(() => HomeroomGradeDto)
   grades: HomeroomGradeDto[];
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(1000)
   @ValidateNested({ each: true })
   @Type(() => HomeroomResultAppreciationDto)
   appreciations?: HomeroomResultAppreciationDto[];
@@ -438,11 +447,11 @@ export class BulkToggleResultVisibilityDto {
   isVisible: boolean;
 
   @IsOptional()
-  @IsString()
+  @Matches(/^[1-9]\d{0,18}$/)
   schoolId?: string;
 
   @IsOptional()
-  @IsString()
+  @Matches(/^[1-9]\d{0,18}$/)
   classId?: string;
 }
 
@@ -460,7 +469,9 @@ export class AssignStudentDto {
   schoolYearId: number;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
   orderNumber?: number;
 }
 

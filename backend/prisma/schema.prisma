@@ -50,6 +50,7 @@ model TeacherGradeSubmission {
   professorId  BigInt   @map("professor_id")
   titularId    BigInt   @map("titular_id")
   status       String   @default("SUBMITTED")
+  titularChanges Json?  @map("titular_changes")
   submittedAt  DateTime @default(now()) @map("submitted_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

@@ -11,12 +11,14 @@ export class StudentsService {
       where: {
         matricule: normalizeStudentMatricule(matricule),
       },
-      include: {
-        ecoles: true,
+      select: {
+        id_eleve: true, matricule: true, nom: true, postnom: true, prenom: true,
+        statut: true, photo: true,
+        ecoles: { select: { nom_ecole: true, logo: true } },
         inscriptions: {
           orderBy: { date_inscription: "desc" },
           take: 1,
-          include: { classes: true },
+          include: { classes: { select: { libelle: true } } },
         },
       },
     });

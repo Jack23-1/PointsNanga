@@ -1,5 +1,6 @@
 import { Body, Controller, Post, Req, Res, UnauthorizedException } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { Throttle } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import { ForgotPasswordDto, LoginDto, ResetPasswordDto, ResolveSchoolDto } from "./dto/login.dto";
 
@@ -8,11 +9,13 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post("resolve-school")
+  @Throttle({ short: { limit: 5, ttl: 1000 }, long: { limit: 30, ttl: 60000 } })
   resolveSchool(@Body() dto: ResolveSchoolDto) {
     return this.authService.resolveSchool(dto.role, dto.identifier);
   }
 
   @Post("login")
+  @Throttle({ short: { limit: 2, ttl: 1000 }, long: { limit: 8, ttl: 60000, blockDuration: 300000 } })
   async login(
     @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) response: Response,
@@ -24,6 +27,7 @@ export class AuthController {
   }
 
   @Post("refresh")
+  @Throttle({ short: { limit: 5, ttl: 1000 }, long: { limit: 30, ttl: 60000 } })
   async refresh(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
@@ -46,11 +50,13 @@ export class AuthController {
   }
 
   @Post("forgot-password")
+  @Throttle({ short: { limit: 1, ttl: 1000 }, long: { limit: 3, ttl: 3600000 } })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
   }
 
   @Post("reset-password")
+  @Throttle({ short: { limit: 2, ttl: 1000 }, long: { limit: 5, ttl: 3600000 } })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.password);
   }

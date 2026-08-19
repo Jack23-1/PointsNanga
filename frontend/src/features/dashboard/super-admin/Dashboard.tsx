@@ -234,9 +234,7 @@ const SuperAdminDashboard = () => {
   const [gradeClassFilter, setGradeClassFilter] = useState<
     string | undefined
   >();
-  const [gradePeriodFilter, setGradePeriodFilter] = useState<string | undefined>(
-    () => localStorage.getItem("superadmin_grade_period") || undefined,
-  );
+  const [gradePeriodFilter, setGradePeriodFilter] = useState<string | undefined>();
   const selectedGradeSchool = schools.find(
     (school) => school.name === gradeSchoolFilter,
   );
@@ -400,6 +398,7 @@ const SuperAdminDashboard = () => {
       })));
     } catch {
       setGradeManagementRecords([]);
+      message.error("Impossible de charger les élèves pour la gestion des cotes.");
     }
   };
 
@@ -429,7 +428,17 @@ const SuperAdminDashboard = () => {
     if (workspace === "Utilisateurs") {
       loadSuperAdmins();
     }
+    if (workspace === "Gestion de cotes") {
+      void loadGradeStudents();
+    }
   }, [workspace]);
+
+  useEffect(() => {
+    if (!gradeSchoolFilter && gradePeriodFilter) {
+      setGradePeriodFilter(undefined);
+      localStorage.removeItem("superadmin_grade_period");
+    }
+  }, [gradePeriodFilter, gradeSchoolFilter]);
 
   const filteredSuperAdmins = useMemo(() => {
     const query = superAdminSearch.trim().toLocaleLowerCase();
@@ -639,7 +648,9 @@ const SuperAdminDashboard = () => {
         matchesSearch &&
         (!gradeSchoolFilter || record.school === gradeSchoolFilter) &&
         (!gradeClassFilter || record.className === gradeClassFilter) &&
-        (!gradePeriodFilter || record.periods.some((period) => period.id === gradePeriodFilter))
+        (!gradeSchoolFilter ||
+          !gradePeriodFilter ||
+          record.periods.some((period) => period.id === gradePeriodFilter))
       );
     });
   }, [gradeClassFilter, gradePeriodFilter, gradeSchoolFilter, gradeSearch, gradeManagementRecords]);

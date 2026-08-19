@@ -118,6 +118,20 @@ export class AcademicController {
     );
   }
 
+  @Patch("grades/teacher/acknowledge-titular-change")
+  @Roles("teacher")
+  acknowledgeTitularChange(
+    @Req() request: { user?: { sub?: string | number } },
+    @Body() dto: { assignmentId?: string | number; periodId?: string | number },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.acknowledgeTitularChange(
+      String(request.user.sub),
+      String(dto.assignmentId ?? ""),
+      String(dto.periodId ?? ""),
+    );
+  }
+
   @Post("grades/teacher/submit")
   @Roles("teacher")
   submitTeacherGrades(
@@ -222,6 +236,27 @@ export class AcademicController {
     return this.academicService.listGradeSubmissions(String(request.user.schoolId));
   }
 
+  @Get("grade-submissions/:id/gradebook")
+  @Roles("director")
+  directorGradebook(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.getDirectorGradebook(id, String(request.user.schoolId));
+  }
+
+  @Patch("grade-submissions/:id/gradebook")
+  @Roles("director")
+  saveDirectorGradebook(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: SaveHomeroomGradesDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.saveDirectorGradebook(id, String(request.user.schoolId), dto);
+  }
+
   @Sse("grade-submissions/events")
   @Roles("director")
   gradeSubmissionEvents(
@@ -238,6 +273,15 @@ export class AcademicController {
   ) {
     if (!request.user?.titularId) throw new ForbiddenException("Session titulaire invalide.");
     return this.academicService.streamHomeroomGradeSubmissionEvents(String(request.user.titularId));
+  }
+
+  @Sse("grades/teacher/events")
+  @Roles("teacher")
+  teacherGradeEvents(
+    @Req() request: { user?: { sub?: string | number } },
+  ) {
+    if (!request.user?.sub) throw new ForbiddenException("Session professeur invalide.");
+    return this.academicService.streamTeacherGradeEvents(String(request.user.sub));
   }
 
   @Patch("grade-submissions/:id/reopen")
@@ -288,18 +332,35 @@ export class AcademicController {
   }
 
   @Post("options")
-  createOption(@Body() dto: CreateOptionDto) {
-    return this.academicService.createOption(dto);
+  createOption(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: CreateOptionDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.createOption({ ...dto, schoolId: Number(schoolId) });
   }
 
   @Patch("options/:id")
-  updateOption(@Param("id") id: string, @Body() dto: UpdateOptionDto) {
-    return this.academicService.updateOption(id, dto);
+  updateOption(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Param("id") id: string,
+    @Body() dto: UpdateOptionDto,
+  ) {
+    const schoolId = request.user?.role === "director" ? request.user.schoolId : dto.schoolId;
+    if (!schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.updateOption(id, { ...dto, schoolId: Number(schoolId) }, String(schoolId));
   }
 
   @Delete("options/:id")
-  deleteOption(@Param("id") id: string) {
-    return this.academicService.deleteOption(id);
+  deleteOption(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Param("id") id: string,
+    @Query("schoolId") schoolId?: string,
+  ) {
+    const authorizedSchoolId = request.user?.role === "director" ? request.user.schoolId : schoolId;
+    if (!authorizedSchoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.deleteOption(id, String(authorizedSchoolId));
   }
 
   @Get("classes")
@@ -810,7 +871,16 @@ export class AcademicController {
   }
 
   @Post("enrollments")
-  assignStudent(@Body() dto: AssignStudentDto) {
-    return this.academicService.assignStudent(dto);
+  assignStudent(
+    @Req() request: { user?: { role?: string; schoolId?: string | number } },
+    @Body() dto: AssignStudentDto,
+  ) {
+    if (request.user?.role === "director" && !request.user.schoolId) {
+      throw new ForbiddenException("École obligatoire.");
+    }
+    return this.academicService.assignStudent(
+      dto,
+      request.user?.role === "director" ? String(request.user.schoolId) : undefined,
+    );
   }
 }
