@@ -454,10 +454,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
 
   const save = async (automatic = false) => {
     if (!data?.period) return;
-    if (
-      !data.period.isOpen &&
-      !["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "")
-    ) return;
+    if (!data.period.isOpen) return;
     const versionBeingSaved = editVersionRef.current;
     const courseWeights = new Map(
       data.courses.map((course) => [course.id, course.weight]),
@@ -562,7 +559,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     if (
       editVersion === 0 ||
       !data ||
-      (!["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "") && !data.period?.isOpen) ||
+      !data.period?.isOpen ||
       ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "")
     ) return;
 
@@ -583,10 +580,20 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
     });
     events.onmessage = (event) => {
       try {
-        const update = JSON.parse(event.data) as { action?: string; comment?: string; assignmentId?: string; periodId?: string; courseName?: string };
+        const update = JSON.parse(event.data) as { action?: string; comment?: string; assignmentId?: string; periodId?: string; courseName?: string; changes?: Array<{ studentName: string; matricule: string; oldValue: number; newValue: number }> };
         if (update.action === "teacher_revision" && update.assignmentId && update.periodId) {
           void loadGradebook(update.periodId, true);
           message.warning(`Modification reçue${update.courseName ? ` pour ${update.courseName}` : ""}. Consultez les détails avant de l’accepter.`);
+          return;
+        }
+        if (update.action === "titular_modified" && update.assignmentId && update.periodId) {
+          void loadGradebook(update.periodId, true);
+          const details = (update.changes ?? []).slice(0, 3).map((change) => `${change.studentName} (${change.matricule}) : ${change.oldValue} → ${change.newValue}`).join(" · ");
+          message.warning(
+            details
+              ? `Le directeur a modifié${update.courseName ? ` ${update.courseName}` : " la grille"} : ${details}${(update.changes?.length ?? 0) > 3 ? " · ..." : ""}`
+              : `Le directeur a modifié${update.courseName ? ` ${update.courseName}` : " la grille"}.`,
+          );
           return;
         }
         if (update.action === "approved" || update.action === "reopened" || update.action === "rejected" || update.action === "teacher_submitted") {
@@ -645,7 +652,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
   }
 
   const isLocked = ["SUBMITTED", "APPROVED"].includes(data.submissionStatus ?? "");
-  const canEdit = !isLocked && (Boolean(data.period?.isOpen) || ["REOPENED", "REJECTED"].includes(data.submissionStatus ?? ""));
+  const canEdit = !isLocked && Boolean(data.period?.isOpen);
 
   const headerRotationClass = "gradebook__sheet--rotate-90";
   const longestCourseName = data.courses.reduce(
@@ -732,7 +739,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
         ))}
       </nav>
 
-      {!data.period?.isOpen && !["REOPENED", "REJECTED"].includes(data.submissionStatus ?? "") && (
+      {!data.period?.isOpen && (
         <Alert
           showIcon
           type="info"
@@ -740,7 +747,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           description="Les cotes de cette période sont visibles mais ne peuvent être modifiées que lorsqu’elle est ouverte."
         />
       )}
-      {data.submissionStatus === "REOPENED" && (
+      {data.submissionStatus === "REOPENED" && data.period?.isOpen && (
         <Alert
           showIcon
           type="warning"
@@ -748,7 +755,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
           description="Vous pouvez corriger les cotes. Une nouvelle validation sera obligatoire après vos modifications."
         />
       )}
-      {data.submissionStatus === "REJECTED" && (
+      {data.submissionStatus === "REJECTED" && data.period?.isOpen && (
         <Alert
           showIcon
           type="error"
@@ -775,7 +782,7 @@ const GradesPage = ({ titularName, schoolLogo }: GradesPageProps) => {
                 </div>
                 {revision.changes.length > 3 && <Button className="gradebook__teacher-revision-more" type="link" onClick={() => setSelectedTeacherRevision(revision)}>Voir les {revision.changes.length} élèves concernés</Button>}
               </div>
-              <div className="gradebook__teacher-revision-action"><small>Vérifiez les changements avant de les appliquer.</small><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => void acceptTeacherRevision(revision.assignmentId, revision.periodId)}>Accepter et intégrer</Button></div>
+                <div className="gradebook__teacher-revision-action"><small>{data.period?.isOpen ? "Vérifiez les changements avant de les appliquer." : "La période doit être ouverte pour intégrer ces changements."}</small><Button type="primary" disabled={!data.period?.isOpen} icon={<CheckCircleOutlined />} onClick={() => void acceptTeacherRevision(revision.assignmentId, revision.periodId)}>Accepter et intégrer</Button></div>
             </div>
           ))}
           {pendingTeacherCount > 3 && (

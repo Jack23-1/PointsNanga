@@ -124,6 +124,7 @@ export class AcademicService {
     assignmentId?: string;
     periodId?: string;
     courseName?: string;
+    className?: string;
     professorId?: string;
     changes?: Array<{
       studentName: string;
@@ -1230,7 +1231,7 @@ export class AcademicService {
       periods: periods.map((item) => ({ id: item.id_periode.toString(), name: item.libelle, number: item.numero, isOpen: item.est_ouverte })),
       isLocked: ["SUBMITTED", "APPROVED"].includes(titularSubmission?.status ?? ""),
       canEdit: !["SUBMITTED", "APPROVED"].includes(titularSubmission?.status ?? "") &&
-        (period.est_ouverte || ["REOPENED", "REJECTED"].includes(titularSubmission?.status ?? "")),
+        period.est_ouverte,
       submissionStatus: teacherSubmission?.status ?? null,
       titularChanges: teacherSubmission?.titularChanges ?? null,
       students: students.map((item) => ({ id: item.id_inscription.toString(), matricule: item.eleves.matricule, name: `${item.eleves.nom}${item.eleves.postnom ? ` ${item.eleves.postnom}` : ""} ${item.eleves.prenom}`, orderNumber: item.numero_ordre })),
@@ -1257,7 +1258,7 @@ export class AcademicService {
     if (["SUBMITTED", "APPROVED"].includes(submission?.status ?? "")) {
       throw new ForbiddenException("La grille de cette classe est déjà verrouillée.");
     }
-    if (!period.est_ouverte && !["REOPENED", "REJECTED"].includes(submission?.status ?? "")) {
+    if (!period.est_ouverte) {
       throw new BadRequestException("Cette période n’est pas ouverte pour la saisie.");
     }
     const enrollments = await this.prisma.inscriptions.findMany({
@@ -1345,7 +1346,7 @@ export class AcademicService {
         "La grille du titulaire est verrouillée par le directeur. Aucun envoi n’est autorisé.",
       );
     }
-    if (!period.est_ouverte && !["REOPENED", "REJECTED"].includes(titularSubmission?.status ?? "")) {
+    if (!period.est_ouverte) {
       throw new BadRequestException("Cette période n’est pas ouverte.");
     }
     const students = await this.prisma.inscriptions.count({
@@ -1405,6 +1406,11 @@ export class AcademicService {
         "La grille du titulaire est verrouillée par le directeur. Cette correction ne peut pas être intégrée.",
       );
     }
+    const period = await this.prisma.periodes.findFirst({
+      where: { id_periode: id_period, statut: "ACTIF", est_ouverte: true },
+      select: { id_periode: true },
+    });
+    if (!period) throw new BadRequestException("Cette période est fermée.");
     await this.applyTeacherDraftToGradebook(id_assignment, id_period, id_titulaire);
     await this.prisma.teacherGradeSubmission.update({ where: { id: submission.id }, data: { status: "SUBMITTED" } });
     return { accepted: true };
@@ -1441,11 +1447,7 @@ export class AcademicService {
         "Les cotes ont déjà été validées. Seul le directeur peut autoriser une modification.",
       );
     }
-    if (
-      !allowLocked &&
-      !period.est_ouverte &&
-      !["REOPENED", "REJECTED"].includes(lockedSubmission?.status ?? "")
-    ) {
+    if (!period.est_ouverte) {
       throw new BadRequestException("Cette période n’est pas ouverte pour la saisie.");
     }
     const appreciations = dto.appreciations ?? [];
@@ -1515,17 +1517,20 @@ export class AcademicService {
     const appreciationByEnrollment = new Map(
       appreciations.map((item) => [String(item.enrollmentId), item]),
     );
-    const teacherCorrectionByGrade = new Map<string, { assignmentId: bigint; professorId: bigint }>();
+    const teacherCorrectionByGrade = new Map<string, { assignmentId: bigint; professorId: bigint; courseName: string }>();
     const studentByEnrollment = new Map(enrollments.map((enrollment) => [
       enrollment.id_inscription.toString(),
       enrollment.eleves,
     ]));
     const modifiedTeacherAssignments = new Map<string, {
       professorId: bigint;
+      courseName: string;
       changes: Array<{ studentName: string; matricule: string; oldValue: number; newValue: number }>;
     }>();
+    const assignmentByCourseClass = new Map<string, { assignmentId: bigint; professorId: bigint; courseName: string }>();
     const currentGradeValues = new Map<string, number>();
-    if (!allowLocked && dto.grades.length) {
+    let submittedAssignmentIds = new Set<string>();
+    if (dto.grades.length) {
       const [currentGrades, assignments] = await Promise.all([
         this.prisma.cotes.findMany({
           where: {
@@ -1543,7 +1548,16 @@ export class AcademicService {
             id_annee_scolaire: homeroom.id_annee_scolaire,
             statut: "ACTIF",
           },
-          select: { id_affectation_professeur: true, id_cours_classe: true, id_professeur: true },
+          select: {
+            id_affectation_professeur: true,
+            id_cours_classe: true,
+            id_professeur: true,
+            cours_classes: {
+              select: {
+                cours: { select: { libelle: true } },
+              },
+            },
+          },
         }),
       ]);
       currentGrades.forEach((grade) => currentGradeValues.set(
@@ -1557,27 +1571,34 @@ export class AcademicService {
         },
         select: { assignmentId: true },
       });
-      const submittedAssignments = new Set(submissions.map((item) => item.assignmentId.toString()));
+      submittedAssignmentIds = new Set(submissions.map((item) => item.assignmentId.toString()));
       assignments.forEach((assignment) => {
-        if (submittedAssignments.has(assignment.id_affectation_professeur.toString())) {
+        const assignmentInfo = {
+          assignmentId: assignment.id_affectation_professeur,
+          professorId: assignment.id_professeur,
+          courseName: assignment.cours_classes.cours.libelle,
+        };
+        assignmentByCourseClass.set(assignment.id_cours_classe.toString(), assignmentInfo);
+        if (submittedAssignmentIds.has(assignment.id_affectation_professeur.toString())) {
           teacherCorrectionByGrade.set(
             assignment.id_cours_classe.toString(),
-            { assignmentId: assignment.id_affectation_professeur, professorId: assignment.id_professeur },
+            assignmentInfo,
           );
         }
       });
     }
     dto.grades.forEach((grade) => {
       const gradeKey = `${grade.enrollmentId}:${grade.courseClassId}`;
-      const teacherCorrection = teacherCorrectionByGrade.get(String(grade.courseClassId));
+      const assignmentInfo = assignmentByCourseClass.get(String(grade.courseClassId));
       if (
-        !teacherCorrection ||
+        !assignmentInfo ||
         !currentGradeValues.has(gradeKey) ||
         currentGradeValues.get(gradeKey) === grade.value
       ) return;
       const student = studentByEnrollment.get(String(grade.enrollmentId));
-      const modification = modifiedTeacherAssignments.get(teacherCorrection.assignmentId.toString()) ?? {
-        professorId: teacherCorrection.professorId,
+      const modification = modifiedTeacherAssignments.get(assignmentInfo.assignmentId.toString()) ?? {
+        professorId: assignmentInfo.professorId,
+        courseName: assignmentInfo.courseName,
         changes: [],
       };
       modification.changes.push({
@@ -1588,7 +1609,7 @@ export class AcademicService {
         oldValue: currentGradeValues.get(gradeKey) ?? 0,
         newValue: grade.value,
       });
-      modifiedTeacherAssignments.set(teacherCorrection.assignmentId.toString(), modification);
+      modifiedTeacherAssignments.set(assignmentInfo.assignmentId.toString(), modification);
     });
     await this.prisma.$transaction(async (tx) => {
       for (const grade of dto.grades) {
@@ -1648,6 +1669,7 @@ export class AcademicService {
       }
 
       for (const [assignmentId, modification] of modifiedTeacherAssignments) {
+        if (!submittedAssignmentIds.has(assignmentId)) continue;
         await tx.teacherGradeSubmission.update({
           where: {
             assignmentId_periodId: {
@@ -1786,6 +1808,7 @@ export class AcademicService {
         professorId: modification.professorId.toString(),
         assignmentId,
         periodId: period.id_periode.toString(),
+        courseName: modification.courseName,
         changes: modification.changes,
       });
     });
@@ -1796,7 +1819,7 @@ export class AcademicService {
     if (!periodId) throw new BadRequestException("Sélectionnez une période.");
     const id_titulaire = toBigInt(titularId);
     const id_periode = toBigInt(periodId);
-    const [titular, period, currentSubmission] = await Promise.all([
+    const [titular, period] = await Promise.all([
       this.prisma.titulaires.findFirst({
         where: {
           id_titulaire,
@@ -1805,17 +1828,11 @@ export class AcademicService {
         include: { classes: { select: { id_ecole: true } } },
       }),
       this.prisma.periodes.findFirst({ where: { id_periode, statut: "ACTIF" } }),
-      this.prisma.gradeSubmission.findUnique({
-        where: { titularId_periodId: { titularId: id_titulaire, periodId: id_periode } },
-      }),
     ]);
     if (!titular || !period || period.id_annee_scolaire !== titular.id_annee_scolaire) {
       throw new BadRequestException("Cette période ne correspond pas au titulaire.");
     }
-    if (
-      !period.est_ouverte &&
-      !["REOPENED", "REJECTED"].includes(currentSubmission?.status ?? "")
-    ) {
+    if (!period.est_ouverte) {
       throw new BadRequestException("Cette période n’est pas ouverte pour le titulaire.");
     }
     const [studentCount, courseCount, gradeCount, completedAppreciationCount] = await Promise.all([
@@ -1896,26 +1913,62 @@ export class AcademicService {
   }
 
   async listGradeSubmissions(schoolId: string) {
+    const activeYear = await this.prisma.annees_scolaires.findFirst({
+      where: {
+        id_ecole: toBigInt(schoolId),
+        est_active: true,
+        statut: "EN_COURS",
+      },
+      select: { id_annee_scolaire: true, libelle: true },
+    });
+    if (!activeYear) return [];
     const titulars = await this.prisma.titulaires.findMany({
       where: { classes: { id_ecole: toBigInt(schoolId) } },
       include: { classes: true, professeurs: true },
     });
     const titularMap = new Map(titulars.map((item) => [item.id_titulaire.toString(), item]));
     const submissions = await this.prisma.gradeSubmission.findMany({
-      where: { titularId: { in: titulars.map((item) => item.id_titulaire) } },
+      where: {
+        titularId: { in: titulars.map((item) => item.id_titulaire) },
+        periodId: {
+          in: await this.prisma.periodes.findMany({
+            where: {
+              id_annee_scolaire: activeYear.id_annee_scolaire,
+              statut: "ACTIF",
+            },
+            select: { id_periode: true },
+          }).then((periods) => periods.map((item) => item.id_periode)),
+        },
+      },
       orderBy: { submittedAt: "desc" },
     });
     const periods = await this.prisma.periodes.findMany({
       where: { id_periode: { in: submissions.map((item) => item.periodId) } },
+      select: {
+        id_periode: true,
+        libelle: true,
+        est_ouverte: true,
+        annees_scolaires: { select: { libelle: true, id_annee_scolaire: true } },
+      },
     });
-    const periodMap = new Map(periods.map((item) => [item.id_periode.toString(), item.libelle]));
+    const periodMap = new Map(periods.map((item) => [
+      item.id_periode.toString(),
+      {
+        name: item.libelle,
+        isOpen: item.est_ouverte,
+        schoolYear: item.annees_scolaires.libelle,
+      },
+    ]));
     return submissions.map((submission) => {
       const titular = titularMap.get(submission.titularId.toString());
+      const period = periodMap.get(submission.periodId.toString());
       return {
         id: submission.id,
         className: titular?.classes.libelle ?? "Classe inconnue",
         teacherName: titular ? `${titular.professeurs.nom} ${titular.professeurs.prenom}` : "Titulaire inconnu",
-        periodName: periodMap.get(submission.periodId.toString()) ?? "Période inconnue",
+        periodName: period?.name ?? "Période inconnue",
+        periodIsOpen: period?.isOpen ?? false,
+        schoolYear: period?.schoolYear ?? "Année inconnue",
         submittedAt: submission.submittedAt,
         status: submission.status,
         rejectionComment: submission.rejectionComment,
@@ -1962,6 +2015,13 @@ export class AcademicService {
     const submission = await this.prisma.gradeSubmission.findUnique({ where: { id } });
     if (!submission || submission.status !== "APPROVED") {
       throw new NotFoundException("Validation de cotes active introuvable.");
+    }
+    const period = await this.prisma.periodes.findUnique({
+      where: { id_periode: submission.periodId },
+      select: { est_ouverte: true },
+    });
+    if (!period?.est_ouverte) {
+      throw new BadRequestException("Ouvrez d’abord la période scolaire avant d’autoriser une correction.");
     }
     const titular = await this.prisma.titulaires.findFirst({
       where: {

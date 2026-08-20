@@ -82,10 +82,17 @@ export default function TeacherCoursesPage() {
           action?: string;
           assignmentId?: string;
           periodId?: string;
+          courseName?: string;
           changes?: Array<{ studentName: string; matricule: string; oldValue: number; newValue: number }>;
         };
         if (update.action === "titular_modified" && update.assignmentId === assignmentId && (!periodId || update.periodId === periodId)) {
-          setTitularChanges(update.changes ?? []);
+          const changes = update.changes ?? [];
+          setTitularChanges(changes);
+          message.warning(
+            changes.length
+              ? `Le directeur a modifié ${changes.length} cote${changes.length > 1 ? "s" : ""}${update.courseName ? ` pour ${update.courseName}` : ""}. ${changes.slice(0, 3).map((change) => `${change.studentName} (${change.matricule}) : ${change.oldValue} → ${change.newValue}`).join(" · ")}`
+              : `Le directeur a modifié ${update.courseName ? `le cours ${update.courseName}` : "votre grille"}.`,
+          );
           void refresh();
         }
       } catch {

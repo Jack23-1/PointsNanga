@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, ReloadOutlined, SaveOutlined, UnlockOutlined } from "@ant-design/icons";
-import { Button, Card, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
 import { API_URL } from "../../../config/constants";
@@ -12,6 +12,8 @@ interface GradeSubmission {
   className: string;
   teacherName: string;
   periodName: string;
+  schoolYear: string;
+  periodIsOpen: boolean;
   submittedAt: string;
   status: SubmissionStatus;
   rejectionComment?: string | null;
@@ -22,7 +24,7 @@ type Appreciation = "bonne" | "mauvaise" | "mediocre" | "excellente";
 interface DirectorGradebook {
   className: string;
   schoolYear: string;
-  period: { id: string; name: string };
+  period: { id: string; name: string; isOpen: boolean };
   students: { id: string; matricule: string; name: string; orderNumber?: number | null }[];
   courses: { id: string; name: string; weight: number }[];
   grades: { enrollmentId: string; courseClassId: string; value: number }[];
@@ -41,6 +43,20 @@ const getError = (error: unknown) =>
     ? error.response.data.message
     : "Opération impossible.";
 
+const ALLOWED_GRADE_KEYS = new Set([
+  "Backspace",
+  "Delete",
+  "Tab",
+  "Enter",
+  "Escape",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+]);
+
 export default function GradeApprovalsPage() {
   const [items, setItems] = useState<GradeSubmission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +68,7 @@ export default function GradeApprovalsPage() {
   const [gradebook, setGradebook] = useState<DirectorGradebook | null>(null);
   const [gradebookLoading, setGradebookLoading] = useState(false);
   const [gradebookSaving, setGradebookSaving] = useState(false);
-  const [gradeValues, setGradeValues] = useState<Record<string, number>>({});
+  const [gradeValues, setGradeValues] = useState<Record<string, number | undefined>>({});
   const [appreciations, setAppreciations] = useState<Record<string, { conduite?: Appreciation; application?: Appreciation }>>({});
 
   const load = async (silent = false) => {
@@ -105,8 +121,10 @@ export default function GradeApprovalsPage() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    return items.filter((item) => !query || `${item.teacherName} ${item.className} ${item.periodName}`.toLocaleLowerCase("fr").includes(query));
+    return items.filter((item) => !query || `${item.teacherName} ${item.className} ${item.periodName} ${item.schoolYear}`.toLocaleLowerCase("fr").includes(query));
   }, [items, search]);
+
+  const totalWeight = gradebook?.courses.reduce((sum, course) => sum + course.weight, 0) ?? 0;
 
   const act = (item: GradeSubmission, action: "approve" | "reopen") => {
     const approve = action === "approve";
@@ -170,7 +188,9 @@ export default function GradeApprovalsPage() {
     try {
       await api.patch(`/grade-submissions/${viewedItem.id}/gradebook`, {
         periodId: Number(gradebook.period.id),
-        grades: Object.entries(gradeValues).map(([key, value]) => {
+        grades: Object.entries(gradeValues)
+          .filter((entry): entry is [string, number] => entry[1] !== undefined)
+          .map(([key, value]) => {
           const [enrollmentId, courseClassId] = key.split(":");
           return { enrollmentId: Number(enrollmentId), courseClassId: Number(courseClassId), value };
         }),
@@ -209,11 +229,11 @@ export default function GradeApprovalsPage() {
             { title: "N°", width: 65, render: (_value, _item, index) => index + 1 },
             { title: "Titulaire", dataIndex: "teacherName" },
             { title: "Classe", dataIndex: "className" },
-            { title: "Période", dataIndex: "periodName" },
+            { title: "Période", render: (_, item) => <Space direction="vertical" size={0}><span>{item.periodName}</span><Typography.Text type="secondary">{item.schoolYear}</Typography.Text></Space> },
             { title: "Envoyée le", render: (_, item) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.submittedAt)) },
-            { title: "Statut", render: (_, item) => <Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : item.status === "REJECTED" ? "red" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : item.status === "REJECTED" ? "REJETÉE" : "OUVERTE"}</Tag> },
+            { title: "Statut", render: (_, item) => <Space wrap><Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : item.status === "REJECTED" ? "red" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : item.status === "REJECTED" ? "REJETÉE" : "OUVERTE"}</Tag><Tag color={item.periodIsOpen ? "green" : "default"}>{item.periodIsOpen ? "Période ouverte" : "Période fermée"}</Tag></Space> },
             { title: "Commentaire", render: (_, item) => item.rejectionComment ? <Typography.Text type="danger">{item.rejectionComment}</Typography.Text> : "—" },
-            { title: "Action", align: "right", render: (_, item) => <Space wrap><Button icon={<EyeOutlined />} onClick={() => void openGradebook(item)}>Voir et modifier</Button>{item.status === "SUBMITTED" ? <><Button danger icon={<CloseCircleOutlined />} onClick={() => { setRejectedItem(item); setRejectionComment(""); }}>Rejeter</Button><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button></> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : item.status === "REJECTED" ? <Tag color="error">Correction demandée</Tag> : <Tag color="processing">Correction autorisée</Tag>}</Space> },
+            { title: "Action", align: "right", render: (_, item) => <Space wrap><Button icon={<EyeOutlined />} onClick={() => void openGradebook(item)}>{item.periodIsOpen ? "Voir et modifier" : "Voir"}</Button>{item.status === "SUBMITTED" ? <><Button danger icon={<CloseCircleOutlined />} onClick={() => { setRejectedItem(item); setRejectionComment(""); }}>Rejeter</Button><Button type="primary" icon={<CheckCircleOutlined />} onClick={() => act(item, "approve")}>Approuver</Button></> : item.status === "APPROVED" ? <Button icon={<UnlockOutlined />} onClick={() => act(item, "reopen")}>Ouvrir la grille</Button> : item.status === "REJECTED" ? <Tag color="error">Correction demandée</Tag> : <Tag color="processing">Correction autorisée</Tag>}</Space> },
           ]}
         />
       </Card>
@@ -221,19 +241,54 @@ export default function GradeApprovalsPage() {
         centered
         width="96vw"
         open={Boolean(viewedItem)}
-        title={`Grille de cotes — ${viewedItem?.className ?? ""} · ${viewedItem?.periodName ?? ""}`}
+        title={`Grille de cotes — ${viewedItem?.className ?? ""} · ${viewedItem?.periodName ?? ""} · ${viewedItem?.schoolYear ?? ""}`}
         okText="Enregistrer les modifications"
         cancelText="Fermer"
-        okButtonProps={{ icon: <SaveOutlined />, loading: gradebookSaving, disabled: !gradebook }}
+        okButtonProps={{ icon: <SaveOutlined />, loading: gradebookSaving, disabled: !gradebook?.period.isOpen }}
         onOk={() => void saveGradebook()}
         onCancel={() => { if (!gradebookSaving) { setViewedItem(null); setGradebook(null); } }}
+        rootClassName="director-gradebook-modal"
       >
+        <div className="director-gradebook__hero">
+          <div>
+            <small>GRILLE DIRECTEUR</small>
+            <h2>{gradebook?.className ?? viewedItem?.className ?? "Classe"}</h2>
+            <p>{gradebook?.schoolYear ?? viewedItem?.schoolYear ?? ""}</p>
+          </div>
+          <div className="director-gradebook__pills">
+            <span className={`director-gradebook__pill${gradebook?.period.isOpen ? " is-open" : " is-closed"}`}>
+              {gradebook?.period.isOpen ? "Période ouverte" : "Période fermée"}
+            </span>
+            <span className="director-gradebook__pill director-gradebook__pill--info">{gradebook?.period.name ?? viewedItem?.periodName ?? ""}</span>
+            <span className="director-gradebook__pill director-gradebook__pill--neutral">{totalWeight} points</span>
+          </div>
+        </div>
+        {gradebook && !gradebook.period.isOpen && (
+          <Alert
+            showIcon
+            type="info"
+            message={`${gradebook.period.name} est fermée`}
+            description="Cette grille est disponible en consultation uniquement. Ouvrez d’abord la période scolaire pour autoriser une modification."
+            style={{ marginBottom: 16 }}
+          />
+        )}
         <Table
           rowKey="id"
           loading={gradebookLoading}
           dataSource={gradebook?.students ?? []}
           pagination={false}
           scroll={{ x: "max-content", y: "60vh" }}
+          rowClassName={(student) => {
+            if (!gradebook?.courses.length) return "";
+            const obtained = gradebook.courses.reduce(
+              (sum, course) => sum + (gradeValues[`${student.id}:${course.id}`] ?? 0),
+              0,
+            );
+            const ratio = totalWeight > 0 ? obtained / totalWeight : 0;
+            if (ratio < 0.5) return "director-gradebook__row director-gradebook__row--fail";
+            if (ratio >= 0.75) return "director-gradebook__row director-gradebook__row--pass";
+            return "director-gradebook__row director-gradebook__row--warning";
+          }}
           columns={[
             { title: "N°", width: 60, fixed: "left", render: (_value, student, index) => student.orderNumber ?? index + 1 },
             { title: "Élève", width: 230, fixed: "left", render: (_value, student) => <><strong>{student.name}</strong><br /><Typography.Text type="secondary">{student.matricule}</Typography.Text></> },
@@ -242,13 +297,52 @@ export default function GradeApprovalsPage() {
               width: 130,
               render: (_value: unknown, student: DirectorGradebook["students"][number]) => {
                 const key = `${student.id}:${course.id}`;
-                return <InputNumber min={0} max={course.weight} precision={0} value={gradeValues[key]} onChange={(value) => {
-                  if (value !== null) setGradeValues((current) => ({ ...current, [key]: value }));
-                }} />;
+                const value = gradeValues[key];
+                const cellClassName = value === undefined
+                  ? "director-gradebook__input"
+                  : value < course.weight / 2
+                    ? "director-gradebook__input director-gradebook__input--fail"
+                    : "director-gradebook__input director-gradebook__input--pass";
+                return <InputNumber
+                  className={cellClassName}
+                  disabled={!gradebook?.period.isOpen}
+                  min={0}
+                  max={course.weight}
+                  precision={0}
+                  controls={false}
+                  inputMode="numeric"
+                  value={value}
+                  parser={(raw) => Number(raw?.replace(/\D/g, "") || 0)}
+                  onKeyDown={(event) => {
+                    if (!ALLOWED_GRADE_KEYS.has(event.key) && !/^[0-9]$/.test(event.key)) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onChange={(next) => {
+                    if (next === null) {
+                      setGradeValues((current) => {
+                        const nextValues = { ...current };
+                        delete nextValues[key];
+                        return nextValues;
+                      });
+                      return;
+                    }
+                    const numeric = Math.round(Number(next));
+                    if (numeric > course.weight) {
+                      message.warning(`La cote ne peut pas dépasser ${course.weight}.`);
+                      return;
+                    }
+                    if (numeric < 0) {
+                      message.warning("La cote ne peut pas être négative.");
+                      return;
+                    }
+                    setGradeValues((current) => ({ ...current, [key]: numeric }));
+                  }}
+                />;
               },
             })),
-            { title: "Conduite", width: 150, render: (_value, student) => <Select style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.conduite} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], conduite: value } }))} /> },
-            { title: "Application", width: 150, render: (_value, student) => <Select style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.application} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], application: value } }))} /> },
+            { title: "Conduite", width: 150, render: (_value, student) => <Select disabled={!gradebook?.period.isOpen} style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.conduite} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], conduite: value } }))} /> },
+            { title: "Application", width: 150, render: (_value, student) => <Select disabled={!gradebook?.period.isOpen} style={{ width: 135 }} options={appreciationOptions} value={appreciations[student.id]?.application} onChange={(value) => setAppreciations((current) => ({ ...current, [student.id]: { ...current[student.id], application: value } }))} /> },
           ]}
         />
       </Modal>
