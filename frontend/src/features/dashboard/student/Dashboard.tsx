@@ -2,14 +2,12 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "r
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   CheckCircleFilled,
-  ClockCircleOutlined,
   FileProtectOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Spin } from "antd";
-import axios from "axios";
 import appLogo from "../../../assets/logo.png";
 import { ROUTES } from "../../../config/constants";
 import { useAuth } from "../../../hooks/useAuth";
@@ -168,7 +166,7 @@ const StudentDashboard = () => {
   const loadResult = useCallback(async () => {
     if (!periodCode) {
       setResult(null);
-      setError("La période à consulter n’a pas été identifiée.");
+      setError("resultat indisponible");
       setIsLoading(false);
       return;
     }
@@ -181,21 +179,9 @@ const StudentDashboard = () => {
         { period: periodCode },
       );
       setResult(response.data);
-    } catch (requestError) {
-      const responseMessage = axios.isAxiosError(requestError)
-        ? (
-            requestError.response?.data as
-              | { message?: string | string[] }
-              | undefined
-          )?.message
-        : undefined;
+    } catch {
       setResult(null);
-      setError(
-        Array.isArray(responseMessage)
-          ? responseMessage.join(" ")
-          : responseMessage ??
-              "Impossible de charger les résultats pour le moment.",
-      );
+      setError("resultat indisponible");
     } finally {
       setIsLoading(false);
     }
@@ -210,103 +196,35 @@ const StudentDashboard = () => {
       <main className="student-result-page student-result-page--state">
         <div className="student-result-state">
           <Spin size="large" />
-          <strong>Vérification de vos résultats…</strong>
-          <span>Approbation, publication et calcul sont contrôlés.</span>
+          <strong>Chargement en cours…</strong>
+          <span>Veuillez patienter.</span>
         </div>
       </main>
     );
   }
 
-  if (error || !result) {
+  if (error || !result || !result.available || !result.summary || !result.courses) {
+    const isPersonalUnavailable = result?.status === "PERSONAL_UNAVAILABLE";
+    const unavailableTitle = "Vos résultats ne sont pas encore disponibles";
+    const unavailableDescription = isPersonalUnavailable
+      ? "Votre dossier est en attente d'activation individuelle."
+      : "Cette période n'est pas encore ouverte pour la consultation.";
+
     return (
       <main className="student-result-page student-result-page--state">
         <div className="student-result-state student-result-state--error">
-          <FileProtectOutlined />
-          <strong>Résultats indisponibles</strong>
-          <span>{error ?? "Le résultat demandé est introuvable."}</span>
+          <span className="student-result-state__brand" aria-label="Points Nanga">
+            <img src={appLogo} alt="" />
+          </span>
+          <span className="student-result-state__icon-wrap" aria-hidden="true">
+            <FileProtectOutlined />
+          </span>
+          <strong>{unavailableTitle}</strong>
+          <span>{unavailableDescription}</span>
           <Button icon={<ReloadOutlined />} onClick={() => void loadResult()}>
             Réessayer
           </Button>
         </div>
-      </main>
-    );
-  }
-
-  const approvalPassed = [
-    "RESULT_NOT_PUBLISHED",
-    "RESULT_INCOMPLETE",
-    "INVALID_TOTAL_WEIGHT",
-    "AVAILABLE",
-  ].includes(result.status);
-  const publicationPassed = [
-    "RESULT_INCOMPLETE",
-    "INVALID_TOTAL_WEIGHT",
-    "AVAILABLE",
-  ].includes(result.status);
-
-  if (!result.available || !result.summary || !result.courses) {
-    return (
-      <main className="student-result-page">
-        <header className="student-result-header">
-          <div className="student-result-header__school">
-            <span>
-              {result.student.schoolLogoUrl ? (
-                <img src={result.student.schoolLogoUrl} alt="" />
-              ) : (
-                <SafetyCertificateOutlined />
-              )}
-            </span>
-            <div>
-              <small>Portail officiel des résultats</small>
-              <strong>{result.student.schoolName}</strong>
-            </div>
-          </div>
-          {result.period && (
-            <div className="student-result-header__period">
-              <ClockCircleOutlined /> {result.period.name}
-            </div>
-          )}
-          <span className="student-result-header__app-logo" aria-label="Points Nanga">
-            <img src={appLogo} alt="" />
-          </span>
-        </header>
-
-        <section className="student-result-identity">
-          <StudentResultAvatar
-            fullName={result.student.fullName}
-            photoUrl={result.student.photoUrl}
-          />
-          <div>
-            <small>Élève identifié</small>
-            <h1>{result.student.fullName}</h1>
-            <p>
-              {result.student.matricule}
-              {result.className ? ` · ${result.className}` : ""}
-              {result.schoolYear ? ` · ${result.schoolYear}` : ""}
-            </p>
-          </div>
-        </section>
-
-        <section className="student-result-pending">
-          <FileProtectOutlined className="student-result-pending__icon" />
-          <span>Résultat non disponible</span>
-          <h2>{result.message ?? "Votre résultat n’est pas encore publié."}</h2>
-          <p>Aucune cote n’est affichée tant que toutes les validations ne sont pas réunies.</p>
-          <div className="student-result-checks">
-            <div className="is-complete">
-              <CheckCircleFilled />
-              <span><strong>Identité vérifiée</strong><small>Matricule et inscription confirmés</small></span>
-            </div>
-            <div className={approvalPassed ? "is-complete" : "is-pending"}>
-              {approvalPassed ? <CheckCircleFilled /> : <ClockCircleOutlined />}
-              <span><strong>Grille approuvée</strong><small>Validation du directeur</small></span>
-            </div>
-            <div className={publicationPassed ? "is-complete" : "is-pending"}>
-              {publicationPassed ? <CheckCircleFilled /> : <ClockCircleOutlined />}
-              <span><strong>Résultat autorisé</strong><small>Publication individuelle</small></span>
-            </div>
-          </div>
-        </section>
       </main>
     );
   }
