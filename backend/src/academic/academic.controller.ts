@@ -35,6 +35,7 @@ import {
   ReplaceCourseTeacherDto,
   ReenrollStudentsDto,
   RejectGradeSubmissionDto,
+  SaveOrderedStudentCheckDto,
 } from "./dto/academic.dto";
 
 @Controller()
@@ -316,6 +317,32 @@ export class AcademicController {
       id,
       String(request.user.schoolId),
       dto.comment,
+    );
+  }
+
+  @Get("ordered-students/checks")
+  @Roles("director")
+  listOrderedStudentChecks(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Query("periodId") periodId?: string,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.listOrderedStudentChecks(
+      String(request.user.schoolId),
+      periodId ?? "",
+    );
+  }
+
+  @Patch("ordered-students/checks")
+  @Roles("director")
+  saveOrderedStudentCheck(
+    @Req() request: { user?: { schoolId?: string | number } },
+    @Body() dto: SaveOrderedStudentCheckDto,
+  ) {
+    if (!request.user?.schoolId) throw new ForbiddenException("École obligatoire.");
+    return this.academicService.saveOrderedStudentCheck(
+      String(request.user.schoolId),
+      dto,
     );
   }
 

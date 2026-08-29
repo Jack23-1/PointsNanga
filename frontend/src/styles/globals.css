@@ -5195,6 +5195,186 @@ code {
   color: #8a98a8;
   font-size: 10px;
 }
+.student-name-unified {
+  font-family: "Playwrite NZ Basic", cursive !important;
+}
+
+.ordered-students-page .ordered-students__matricule {
+  padding: 4px 8px;
+  border-radius: 7px;
+  color: #305d7b;
+  background: #eef4f8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ordered-students-page .ordered-students__class-tag.ant-tag {
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid #d6e3ee;
+  border-radius: 8px;
+  color: #2f5c7b;
+  background: linear-gradient(180deg, #ffffff, #f2f7fa);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ordered-students-page .ordered-students__check {
+  position: relative;
+}
+
+.ordered-students-page .ordered-students__check-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ordered-students-page .ordered-students__check .ant-checkbox-inner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #9eb7cc;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffffff, #f3f8fc);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease,
+    background 180ms ease;
+}
+
+.ordered-students-page .ordered-students__check:hover .ant-checkbox-inner {
+  border-color: #4f86b6;
+  box-shadow: 0 0 0 4px rgba(79, 134, 182, 0.12);
+}
+
+.ordered-students-page
+  .ordered-students__check
+  .ant-checkbox-checked
+  .ant-checkbox-inner {
+  border-color: #0f6f50;
+  background: linear-gradient(135deg, #14744f, #0d5a3f);
+  animation: ordered-check-pop 260ms cubic-bezier(0.17, 0.89, 0.32, 1.28);
+}
+
+.ordered-students-page
+  .ordered-students__check
+  .ant-checkbox-checked
+  .ant-checkbox-inner::after {
+  border-width: 2px;
+  border-color: #f7fffb;
+}
+
+.ordered-students-page .ordered-students__check .ant-checkbox-input:focus-visible + .ant-checkbox-inner {
+  border-color: #0f6f50;
+  box-shadow: 0 0 0 4px rgba(15, 111, 80, 0.24);
+}
+
+.ordered-students-page .ordered-students__check .ant-checkbox-checked::after {
+  border-radius: 8px;
+  border-color: rgba(15, 111, 80, 0.35);
+  animation: ordered-check-glow 320ms ease-out;
+}
+
+.ordered-students-page .ordered-students__check-sign {
+  color: #0e6a4b;
+  font-size: 13px;
+  filter: drop-shadow(0 2px 6px rgba(14, 106, 75, 0.28));
+  animation: ordered-check-sign 230ms ease-out both;
+}
+
+.ordered-students-page .ant-table-tbody > tr > td {
+  position: relative;
+  border-bottom: 0 !important;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.ordered-students-page .ant-table-tbody > tr > td::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(33, 67, 95, 0),
+    rgba(33, 67, 95, 0.2),
+    rgba(33, 67, 95, 0)
+  );
+  pointer-events: none;
+}
+
+.ordered-students-page .ant-table-tbody > tr:last-child > td::after {
+  opacity: 0;
+}
+
+.ordered-students-page .ant-table-tbody > tr.ordered-students__row--checked > td {
+  background: #e0f4e9;
+}
+
+.ordered-students-page .ant-table-tbody > tr.ordered-students__row--checked > td::after {
+  background: linear-gradient(
+    90deg,
+    rgba(15, 111, 80, 0),
+    rgba(15, 111, 80, 0.34),
+    rgba(15, 111, 80, 0)
+  );
+}
+
+.ordered-students-page .ant-table-tbody > tr.ordered-students__row--checked:hover > td {
+  background: #d7efdf !important;
+}
+
+@keyframes ordered-check-pop {
+  0% {
+    transform: scale(0.86);
+  }
+
+  68% {
+    transform: scale(1.12);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ordered-check-glow {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes ordered-check-sign {
+  0% {
+    opacity: 0;
+    transform: translateX(-5px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ordered-students-page .ordered-students__check .ant-checkbox-inner,
+  .ordered-students-page .ant-table-tbody > tr > td {
+    transition: none;
+  }
+
+  .ordered-students-page
+    .ordered-students__check
+    .ant-checkbox-checked
+    .ant-checkbox-inner,
+  .ordered-students-page .ordered-students__check .ant-checkbox-checked::after {
+    animation: none;
+  }
+}
+
 .students-directory__matricule {
   padding: 5px 8px;
   border-radius: 7px;

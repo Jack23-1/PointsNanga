@@ -72,6 +72,21 @@ model TeacherGradeDraft {
   @@map("teacher_grade_drafts")
 }
 
+model OrderedStudentCheck {
+  id           String   @id @default(uuid())
+  schoolId     BigInt   @map("school_id")
+  enrollmentId BigInt   @map("enrollment_id")
+  periodId     BigInt   @map("period_id")
+  isInOrder    Boolean  @default(false) @map("is_in_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, enrollmentId, periodId])
+  @@index([schoolId, periodId])
+  @@index([enrollmentId])
+  @@map("ordered_student_checks")
+}
+
 model SuperAdmin {
   id                  String    @id @default(uuid())
   email               String    @unique

@@ -15,6 +15,7 @@ import {
   LogoutOutlined,
   CalendarOutlined,
   AuditOutlined,
+  OrderedListOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "../../hooks/useAuth";
 import { ROUTES } from "../../config/constants";
@@ -167,6 +168,12 @@ const Sidebar: React.FC = () => {
           icon: <AuditOutlined />,
           label: "Cotes et approbations",
           onClick: () => handleNavigation(ROUTES.GRADE_APPROVALS),
+        },
+        {
+          key: ROUTES.ORDERED_STUDENTS,
+          icon: <OrderedListOutlined />,
+          label: "Eleves en Ordre",
+          onClick: () => handleNavigation(ROUTES.ORDERED_STUDENTS),
         },
         {
           key: ROUTES.ACADEMIC_LIBRARY,

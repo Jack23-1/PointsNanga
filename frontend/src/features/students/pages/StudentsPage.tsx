@@ -447,7 +447,7 @@ const StudentsPage = () => {
         <div className="students-directory__identity">
           <Avatar size={48} src={student.photo} icon={<UserOutlined />} />
           <div>
-            <strong>{student.name}</strong>
+            <strong className="student-name-unified">{student.name}</strong>
           </div>
         </div>
       ),

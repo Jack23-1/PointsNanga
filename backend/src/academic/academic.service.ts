@@ -23,6 +23,7 @@ import {
   CreateStudentDto,
   CreateTeacherDto,
   SaveHomeroomGradesDto,
+  SaveOrderedStudentCheckDto,
   ReplaceCourseTeacherDto,
   ReenrollStudentsDto,
   UpdateClassDto,
@@ -2172,6 +2173,7 @@ export class AcademicService {
       const period = periodMap.get(submission.periodId.toString());
       return {
         id: submission.id,
+        periodId: submission.periodId.toString(),
         className: titular?.classes.libelle ?? "Classe inconnue",
         teacherName: titular ? `${titular.professeurs.nom} ${titular.professeurs.prenom}` : "Titulaire inconnu",
         periodName: period?.name ?? "Période inconnue",
@@ -2183,6 +2185,110 @@ export class AcademicService {
         rejectedAt: submission.rejectedAt,
       };
     });
+  }
+
+  private async getDirectorOpenPeriod(schoolId: string, periodId: string) {
+    if (!periodId) {
+      throw new BadRequestException("Période obligatoire.");
+    }
+
+    const period = await this.prisma.periodes.findFirst({
+      where: {
+        id_periode: toBigInt(periodId),
+        est_ouverte: true,
+        statut: "ACTIF",
+        annees_scolaires: {
+          id_ecole: toBigInt(schoolId),
+          est_active: true,
+          statut: "EN_COURS",
+        },
+      },
+      select: {
+        id_periode: true,
+        id_annee_scolaire: true,
+      },
+    });
+
+    if (!period) {
+      throw new NotFoundException("Période ouverte introuvable.");
+    }
+
+    return period;
+  }
+
+  async listOrderedStudentChecks(schoolId: string, periodId: string) {
+    const period = await this.getDirectorOpenPeriod(schoolId, periodId);
+    const checks = await this.prisma.orderedStudentCheck.findMany({
+      where: {
+        schoolId: toBigInt(schoolId),
+        periodId: period.id_periode,
+      },
+      select: {
+        enrollmentId: true,
+        periodId: true,
+        isInOrder: true,
+      },
+    });
+
+    return checks.map((check) => ({
+      enrollmentId: check.enrollmentId.toString(),
+      periodId: check.periodId.toString(),
+      isInOrder: check.isInOrder,
+    }));
+  }
+
+  async saveOrderedStudentCheck(schoolId: string, dto: SaveOrderedStudentCheckDto) {
+    const id_ecole = toBigInt(schoolId);
+    const id_inscription = toBigInt(dto.enrollmentId);
+    const period = await this.getDirectorOpenPeriod(schoolId, dto.periodId);
+
+    const enrollment = await this.prisma.inscriptions.findFirst({
+      where: {
+        id_inscription,
+        id_annee_scolaire: period.id_annee_scolaire,
+        statut: "INSCRIT",
+        eleves: {
+          id_ecole,
+          statut: "ACTIF",
+        },
+      },
+      select: { id_inscription: true },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException("Inscription élève introuvable pour cette période.");
+    }
+
+    const saved = await this.prisma.orderedStudentCheck.upsert({
+      where: {
+        schoolId_enrollmentId_periodId: {
+          schoolId: id_ecole,
+          enrollmentId: id_inscription,
+          periodId: period.id_periode,
+        },
+      },
+      create: {
+        schoolId: id_ecole,
+        enrollmentId: id_inscription,
+        periodId: period.id_periode,
+        isInOrder: dto.isInOrder,
+      },
+      update: {
+        isInOrder: dto.isInOrder,
+      },
+      select: {
+        enrollmentId: true,
+        periodId: true,
+        isInOrder: true,
+      },
+    });
+
+    return {
+      enrollmentId: saved.enrollmentId.toString(),
+      periodId: saved.periodId.toString(),
+      isInOrder: saved.isInOrder,
+      saved: true,
+    };
   }
 
   private async directorSubmissionContext(id: string, schoolId: string) {
@@ -3502,6 +3608,8 @@ export class AcademicService {
       guardianName: student.nom_tuteur,
       guardianPhone: student.telephone_tuteur,
       photo: student.photo,
+      enrollmentId: student.inscriptions[0]?.id_inscription.toString() ?? null,
+      schoolYearId: student.inscriptions[0]?.id_annee_scolaire.toString() ?? null,
       classId: student.inscriptions[0]?.id_classe.toString(),
       className: student.inscriptions[0]?.classes.libelle ?? "—",
       status: student.statut === "ACTIF" ? "Actif" : "En attente",

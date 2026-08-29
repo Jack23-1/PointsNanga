@@ -173,7 +173,7 @@ export default function AcademicLibraryPage() {
         <Space>
           <Avatar src={student.photo || undefined} icon={!student.photo ? <UserOutlined /> : undefined} />
           <span className="academic-library__student-name">
-            <strong>{student.name}</strong>
+            <strong className="student-name-unified">{student.name}</strong>
             <small>{student.matricule}</small>
           </span>
         </Space>
@@ -379,7 +379,7 @@ export default function AcademicLibraryPage() {
                 icon={!selectedStudent.photo ? <UserOutlined /> : undefined}
               />
               <div>
-                <strong>{selectedStudent.name}</strong>
+                <strong className="student-name-unified">{selectedStudent.name}</strong>
                 <span>
                   {selectedStudent.matricule} · {selectedStudent.className} ·{" "}
                   {selectedPeriod?.name}

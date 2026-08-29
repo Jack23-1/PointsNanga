@@ -19,6 +19,7 @@ export const ROUTES = {
   SCHOOL_YEARS: '/school-years',
   ACADEMIC_LIBRARY: '/academic-library',
   GRADE_APPROVALS: '/grade-approvals',
+  ORDERED_STUDENTS: '/ordered-students',
   DELETION_REQUESTS: '/deletion-requests',
   GRADES: '/grades',
   TEACHER_COURSES: '/mes-cotes',
@@ -29,7 +30,7 @@ export const ROUTES = {
 
 export const ROLE_ROUTES = {
   super_admin: ['/dashboard', '/schools', '/deletion-requests', '/settings'],
-  director: ['/dashboard', '/students', '/classes', '/teachers', '/courses', '/homeroom-teachers', '/course-assignments', '/school-years', '/academic-library', '/grade-approvals', '/results', '/settings'],
+  director: ['/dashboard', '/students', '/classes', '/teachers', '/courses', '/homeroom-teachers', '/course-assignments', '/school-years', '/academic-library', '/grade-approvals', '/ordered-students', '/results', '/settings'],
   teacher: ['/dashboard', '/grades', '/mes-cotes', '/results'],
   student: ['/dashboard', '/results', '/bulletins'],
 } as const;

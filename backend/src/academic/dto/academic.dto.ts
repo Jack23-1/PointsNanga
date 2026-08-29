@@ -455,6 +455,17 @@ export class BulkToggleResultVisibilityDto {
   classId?: string;
 }
 
+export class SaveOrderedStudentCheckDto {
+  @Matches(/^[1-9]\d{0,18}$/)
+  enrollmentId: string;
+
+  @Matches(/^[1-9]\d{0,18}$/)
+  periodId: string;
+
+  @IsBoolean()
+  isInOrder: boolean;
+}
+
 export class AssignStudentDto {
   @IsInt()
   @Min(1)

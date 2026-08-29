@@ -19,6 +19,7 @@ import SchoolYearsPage from "../features/management/pages/SchoolYearsPage";
 import AcademicLibraryPage from "../features/management/pages/AcademicLibraryPage";
 import DeletionRequestsPage from "../features/management/pages/DeletionRequestsPage";
 import GradeApprovalsPage from "../features/management/pages/GradeApprovalsPage";
+import OrderedStudentsPage from "../features/management/pages/OrderedStudentsPage";
 import { useAuth } from "../hooks/useAuth";
 
 // Placeholder pages - will be replaced with actual feature pages
@@ -206,6 +207,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute allowedRoles={["director"]}>
         <GradeApprovalsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: ROUTES.ORDERED_STUDENTS,
+    element: (
+      <ProtectedRoute allowedRoles={["director"]}>
+        <OrderedStudentsPage />
       </ProtectedRoute>
     ),
   },
