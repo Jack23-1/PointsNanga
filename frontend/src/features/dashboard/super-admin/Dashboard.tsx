@@ -32,6 +32,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
+  ReloadOutlined,
   RiseOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
@@ -99,6 +100,23 @@ type GradeManagementRecord = {
   enrollmentId: string | null;
   periods: { id: string; name: string; isOpen: boolean }[];
   periodStatuses: Record<string, boolean>;
+};
+
+type OrderedEligibilitySubmissionRecord = {
+  key: string;
+  schoolId: string;
+  enrollmentId: string;
+  periodId: string;
+  matricule: string;
+  studentName: string;
+  className: string;
+  schoolName: string;
+  schoolYear: string;
+  periodName: string;
+  periodIsOpen: boolean;
+  submittedAt: string;
+  isSuperAdminApproved: boolean;
+  superAdminApprovedAt: string | null;
 };
 
 type SuperAdminRecord = {
@@ -218,7 +236,21 @@ const SuperAdminDashboard = () => {
     hasFullAccess: false,
   });
   const [gradeSearch, setGradeSearch] = useState("");
-  const [gradeManagementRecords, setGradeManagementRecords] = useState<GradeManagementRecord[]>([]);
+  const [gradeManagementRecords, setGradeManagementRecords] = useState<
+    GradeManagementRecord[]
+  >([]);
+  const [eligibilitySubmissions, setEligibilitySubmissions] = useState<
+    OrderedEligibilitySubmissionRecord[]
+  >([]);
+  const [eligibilitySearch, setEligibilitySearch] = useState("");
+  const [isLoadingEligibilitySubmissions, setIsLoadingEligibilitySubmissions] =
+    useState(false);
+  const [savingEligibilityRowKey, setSavingEligibilityRowKey] = useState<
+    string | null
+  >(null);
+  const [isApprovingAllEligibility, setIsApprovingAllEligibility] =
+    useState(false);
+  const [eligibilityModalOpen, setEligibilityModalOpen] = useState(false);
   const [bulkVisibilityScope, setBulkVisibilityScope] = useState<
     "school" | "class" | null
   >(null);
@@ -230,11 +262,15 @@ const SuperAdminDashboard = () => {
   const [academicSchoolFilter, setAcademicSchoolFilter] = useState<
     string | undefined
   >();
-  const [gradeSchoolFilter, setGradeSchoolFilter] = useState<string | undefined>();
+  const [gradeSchoolFilter, setGradeSchoolFilter] = useState<
+    string | undefined
+  >();
   const [gradeClassFilter, setGradeClassFilter] = useState<
     string | undefined
   >();
-  const [gradePeriodFilter, setGradePeriodFilter] = useState<string | undefined>();
+  const [gradePeriodFilter, setGradePeriodFilter] = useState<
+    string | undefined
+  >();
   const selectedGradeSchool = schools.find(
     (school) => school.name === gradeSchoolFilter,
   );
@@ -242,14 +278,15 @@ const SuperAdminDashboard = () => {
     (school) => school.name === academicSchoolFilter,
   );
   const gradePeriods = useMemo(
-    () => Array.from(
-      new Map(
-        gradeManagementRecords
-          .filter((record) => record.school === gradeSchoolFilter)
-          .flatMap((record) => record.periods)
-          .map((period) => [period.id, period]),
-      ).values(),
-    ),
+    () =>
+      Array.from(
+        new Map(
+          gradeManagementRecords
+            .filter((record) => record.school === gradeSchoolFilter)
+            .flatMap((record) => record.periods)
+            .map((period) => [period.id, period]),
+        ).values(),
+      ),
     [gradeManagementRecords, gradeSchoolFilter],
   );
   const selectedGradePeriodIsOpen = Boolean(
@@ -280,7 +317,7 @@ const SuperAdminDashboard = () => {
           {school?.logo ? (
             <img src={school.logo} alt="" />
           ) : (
-            school?.initials ?? "ÉC"
+            (school?.initials ?? "ÉC")
           )}
         </span>
         <span>
@@ -331,9 +368,9 @@ const SuperAdminDashboard = () => {
         ? "Gestion de cotes"
         : requestedWorkspace === "results"
           ? "Résultats"
-        : requestedWorkspace === "users"
-          ? "Utilisateurs"
-          : "Aperçu",
+          : requestedWorkspace === "users"
+            ? "Utilisateurs"
+            : "Aperçu",
     );
   }, [location.search, canCreateSuperAdmin, navigate]);
 
@@ -376,31 +413,86 @@ const SuperAdminDashboard = () => {
 
   const loadGradeStudents = async () => {
     try {
-      const response = await api.get<Array<{
-        id: string;
-        schoolId: string;
-        classId: string | null;
-        matricule: string;
-        lastName: string;
-        postName: string;
-        firstName: string;
-        school: string;
-        className: string;
-        enrollmentId: string | null;
-        periods: { id: string; name: string; isOpen: boolean }[];
-        periodStatuses: Record<string, boolean>;
-        hasGrades: boolean;
-      }>>("/grades/admin/students");
-      setGradeManagementRecords(response.data.map((record) => ({
-        ...record,
-        key: record.id,
-        isValidated: Object.values(record.periodStatuses).some(Boolean),
-      })));
+      const response = await api.get<
+        Array<{
+          id: string;
+          schoolId: string;
+          classId: string | null;
+          matricule: string;
+          lastName: string;
+          postName: string;
+          firstName: string;
+          school: string;
+          className: string;
+          enrollmentId: string | null;
+          periods: { id: string; name: string; isOpen: boolean }[];
+          periodStatuses: Record<string, boolean>;
+          hasGrades: boolean;
+        }>
+      >("/grades/admin/students");
+      setGradeManagementRecords(
+        response.data.map((record) => ({
+          ...record,
+          key: record.id,
+          isValidated: Object.values(record.periodStatuses).some(Boolean),
+        })),
+      );
     } catch {
       setGradeManagementRecords([]);
-      message.error("Impossible de charger les élèves pour la gestion des cotes.");
+      message.error(
+        "Impossible de charger les élèves pour la gestion des cotes.",
+      );
     }
   };
+
+  const loadEligibilitySubmissions = async (showLoading = false) => {
+    if (showLoading) setIsLoadingEligibilitySubmissions(true);
+    try {
+      const response = await api.get<
+        Array<{
+          key: string;
+          schoolId: string;
+          enrollmentId: string;
+          periodId: string;
+          matricule: string;
+          studentName: string;
+          className: string;
+          schoolName: string;
+          schoolYear: string;
+          periodName: string;
+          periodIsOpen: boolean;
+          submittedAt: string;
+          isSuperAdminApproved: boolean;
+          superAdminApprovedAt: string | null;
+        }>
+      >("/ordered-students/eligibility-submissions");
+
+      setEligibilitySubmissions(
+        response.data.map((record) => ({
+          ...record,
+          key: record.key || `${record.enrollmentId}:${record.periodId}`,
+        })),
+      );
+    } catch {
+      setEligibilitySubmissions([]);
+      message.error(
+        "Impossible de charger les eleves eligibles envoyes par les directions.",
+      );
+    } finally {
+      if (showLoading) setIsLoadingEligibilitySubmissions(false);
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (
+      params.get("workspace") === "grades" &&
+      params.get("view") === "eligibility"
+    ) {
+      setEligibilityModalOpen(true);
+      void loadEligibilitySubmissions(true);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     let active = true;
@@ -414,6 +506,7 @@ const SuperAdminDashboard = () => {
     void loadSchools(true);
     void loadGradeSummary();
     void loadGradeStudents();
+    void loadEligibilitySubmissions(true);
     window.addEventListener("focus", refreshSchools);
     document.addEventListener("visibilitychange", refreshSchools);
 
@@ -430,6 +523,7 @@ const SuperAdminDashboard = () => {
     }
     if (workspace === "Gestion de cotes") {
       void loadGradeStudents();
+      void loadEligibilitySubmissions(true);
     }
   }, [workspace]);
 
@@ -444,7 +538,8 @@ const SuperAdminDashboard = () => {
     const query = superAdminSearch.trim().toLocaleLowerCase();
 
     return superAdmins.filter((admin) => {
-      const fullName = `${admin.firstName} ${admin.lastName}`.toLocaleLowerCase();
+      const fullName =
+        `${admin.firstName} ${admin.lastName}`.toLocaleLowerCase();
 
       return (
         !query ||
@@ -509,16 +604,19 @@ const SuperAdminDashboard = () => {
     setIsSavingSuperAdmin(true);
     try {
       if (editingSuperAdmin) {
-        await api.patch<SuperAdminApiRecord>(`/superadmins/${editingSuperAdmin.id}`, {
-          firstName: superAdminForm.firstName,
-          lastName: superAdminForm.lastName,
-          email: superAdminForm.email,
-          isActive: superAdminForm.status === "Actif",
-          hasFullAccess: superAdminForm.hasFullAccess,
-          ...(superAdminForm.password.trim()
-            ? { password: superAdminForm.password }
-            : {}),
-        });
+        await api.patch<SuperAdminApiRecord>(
+          `/superadmins/${editingSuperAdmin.id}`,
+          {
+            firstName: superAdminForm.firstName,
+            lastName: superAdminForm.lastName,
+            email: superAdminForm.email,
+            isActive: superAdminForm.status === "Actif",
+            hasFullAccess: superAdminForm.hasFullAccess,
+            ...(superAdminForm.password.trim()
+              ? { password: superAdminForm.password }
+              : {}),
+          },
+        );
         message.success("Superadmin modifié dans la base.");
       } else {
         await api.post<SuperAdminApiRecord>("/superadmins", {
@@ -653,7 +751,251 @@ const SuperAdminDashboard = () => {
           record.periods.some((period) => period.id === gradePeriodFilter))
       );
     });
-  }, [gradeClassFilter, gradePeriodFilter, gradeSchoolFilter, gradeSearch, gradeManagementRecords]);
+  }, [
+    gradeClassFilter,
+    gradePeriodFilter,
+    gradeSchoolFilter,
+    gradeSearch,
+    gradeManagementRecords,
+  ]);
+
+  const filteredEligibilitySubmissions = useMemo(() => {
+    const normalizedSearch = eligibilitySearch.trim().toLocaleLowerCase("fr");
+
+    return eligibilitySubmissions.filter((record) => {
+      if (!normalizedSearch) return true;
+      return [
+        record.studentName,
+        record.matricule,
+        record.className,
+        record.schoolName,
+        record.periodName,
+        record.schoolYear,
+      ]
+        .join(" ")
+        .toLocaleLowerCase("fr")
+        .includes(normalizedSearch);
+    });
+  }, [eligibilitySearch, eligibilitySubmissions]);
+
+  const pendingEligibilityCount = useMemo(
+    () =>
+      eligibilitySubmissions.filter((record) => !record.isSuperAdminApproved)
+        .length,
+    [eligibilitySubmissions],
+  );
+
+  const approvedEligibilityCount = useMemo(
+    () =>
+      eligibilitySubmissions.filter((record) => record.isSuperAdminApproved)
+        .length,
+    [eligibilitySubmissions],
+  );
+
+  const setSuperAdminEligibilityApproval = async (
+    record: OrderedEligibilitySubmissionRecord,
+    isApproved: boolean,
+  ) => {
+    const previousValue = record.isSuperAdminApproved;
+    const previousApprovedAt = record.superAdminApprovedAt;
+    const optimisticApprovedAt = isApproved ? new Date().toISOString() : null;
+
+    setSavingEligibilityRowKey(record.key);
+    setEligibilitySubmissions((current) =>
+      current.map((item) =>
+        item.key === record.key
+          ? {
+              ...item,
+              isSuperAdminApproved: isApproved,
+              superAdminApprovedAt: optimisticApprovedAt,
+            }
+          : item,
+      ),
+    );
+
+    try {
+      await api.patch(
+        `/ordered-students/eligibility-submissions/${record.enrollmentId}/periods/${record.periodId}`,
+        { isApproved },
+      );
+
+      setGradeManagementRecords((current) =>
+        current.map((item) => {
+          if (item.enrollmentId !== record.enrollmentId) return item;
+          if (!item.periods.some((period) => period.id === record.periodId)) {
+            return item;
+          }
+
+          const periodStatuses = {
+            ...item.periodStatuses,
+            [record.periodId]: isApproved,
+          };
+
+          return {
+            ...item,
+            periodStatuses,
+            isValidated: Object.values(periodStatuses).some(Boolean),
+          };
+        }),
+      );
+
+      message.success(
+        isApproved
+          ? "Eligibilite validee et integree a la grille."
+          : "Validation retiree et eleve retire de la grille.",
+      );
+    } catch {
+      setEligibilitySubmissions((current) =>
+        current.map((item) =>
+          item.key === record.key
+            ? {
+                ...item,
+                isSuperAdminApproved: previousValue,
+                superAdminApprovedAt: previousApprovedAt,
+              }
+            : item,
+        ),
+      );
+      message.error("Impossible de mettre a jour la validation super admin.");
+    } finally {
+      setSavingEligibilityRowKey(null);
+    }
+  };
+
+  const approveAllPendingEligibility = async () => {
+    const pendingRecords = eligibilitySubmissions.filter(
+      (record) => !record.isSuperAdminApproved,
+    );
+
+    if (pendingRecords.length === 0) {
+      message.info("Tous les eleves envoyes sont deja valides.");
+      return;
+    }
+
+    setIsApprovingAllEligibility(true);
+    const optimisticApprovedAt = new Date().toISOString();
+    setEligibilitySubmissions((current) =>
+      current.map((item) =>
+        item.isSuperAdminApproved
+          ? item
+          : {
+              ...item,
+              isSuperAdminApproved: true,
+              superAdminApprovedAt: optimisticApprovedAt,
+            },
+      ),
+    );
+
+    try {
+      const results = await Promise.allSettled(
+        pendingRecords.map((record) =>
+          api
+            .patch(
+              `/ordered-students/eligibility-submissions/${record.enrollmentId}/periods/${record.periodId}`,
+              { isApproved: true },
+            )
+            .then(() => record),
+        ),
+      );
+
+      const successfulRecords = results
+        .filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<OrderedEligibilitySubmissionRecord> =>
+            result.status === "fulfilled",
+        )
+        .map((result) => result.value);
+
+      const failedRecords = results
+        .map((result, index) => ({ result, record: pendingRecords[index] }))
+        .filter(({ result }) => result.status === "rejected")
+        .map(({ record }) => record);
+
+      if (successfulRecords.length > 0) {
+        const approvedPeriodByEnrollment = new Map<string, Set<string>>();
+        successfulRecords.forEach((record) => {
+          if (!approvedPeriodByEnrollment.has(record.enrollmentId)) {
+            approvedPeriodByEnrollment.set(record.enrollmentId, new Set());
+          }
+          approvedPeriodByEnrollment.get(record.enrollmentId)?.add(record.periodId);
+        });
+
+        setGradeManagementRecords((current) =>
+          current.map((item) => {
+            if (!item.enrollmentId) return item;
+            const approvedPeriods = approvedPeriodByEnrollment.get(item.enrollmentId);
+            if (!approvedPeriods || approvedPeriods.size === 0) return item;
+
+            const periodStatuses = { ...item.periodStatuses };
+            let changed = false;
+
+            approvedPeriods.forEach((periodId) => {
+              if (!item.periods.some((period) => period.id === periodId)) return;
+              periodStatuses[periodId] = true;
+              changed = true;
+            });
+
+            if (!changed) return item;
+
+            return {
+              ...item,
+              periodStatuses,
+              isValidated: Object.values(periodStatuses).some(Boolean),
+            };
+          }),
+        );
+      }
+
+      if (failedRecords.length > 0) {
+        const failedKeys = new Set(failedRecords.map((record) => record.key));
+        setEligibilitySubmissions((current) =>
+          current.map((item) =>
+            failedKeys.has(item.key)
+              ? {
+                  ...item,
+                  isSuperAdminApproved: false,
+                  superAdminApprovedAt: null,
+                }
+              : item,
+          ),
+        );
+        message.warning(
+          `${successfulRecords.length} validation(s) appliquee(s), ${failedRecords.length} echec(s).`,
+        );
+      } else {
+        message.success(
+          `${successfulRecords.length} eleve(s) valide(s) et integre(s) a la grille.`,
+        );
+      }
+    } catch {
+      setEligibilitySubmissions((current) =>
+        current.map((item) =>
+          pendingRecords.some((record) => record.key === item.key)
+            ? {
+                ...item,
+                isSuperAdminApproved: false,
+                superAdminApprovedAt: null,
+              }
+            : item,
+        ),
+      );
+      message.error("Impossible d'appliquer la validation globale.");
+    } finally {
+      setIsApprovingAllEligibility(false);
+    }
+  };
+
+  const closeEligibilityModal = () => {
+    setEligibilityModalOpen(false);
+    const params = new URLSearchParams(location.search);
+    if (params.get("view") !== "eligibility") return;
+    params.delete("view");
+    const query = params.toString();
+    navigate(`${ROUTES.DASHBOARD}${query ? `?${query}` : ""}`, {
+      replace: true,
+    });
+  };
 
   const bulkSchoolRecords = useMemo(() => {
     if (!selectedGradeSchool || !gradePeriodFilter) return [];
@@ -711,7 +1053,8 @@ const SuperAdminDashboard = () => {
       return;
     }
 
-    const targetRecords = scope === "class" ? bulkClassRecords : bulkSchoolRecords;
+    const targetRecords =
+      scope === "class" ? bulkClassRecords : bulkSchoolRecords;
     if (targetRecords.length === 0) {
       message.warning("Aucun élève à mettre à jour pour cette sélection.");
       return;
@@ -741,7 +1084,8 @@ const SuperAdminDashboard = () => {
   };
 
   const confirmBulkResultVisibility = (scope: "school" | "class") => {
-    const targetRecords = scope === "class" ? bulkClassRecords : bulkSchoolRecords;
+    const targetRecords =
+      scope === "class" ? bulkClassRecords : bulkSchoolRecords;
     const scopeLabel =
       scope === "class"
         ? `la classe ${gradeClassFilter}`
@@ -940,7 +1284,11 @@ const SuperAdminDashboard = () => {
       align: "center",
       render: (_, record) => (
         <Checkbox
-          checked={gradePeriodFilter ? Boolean(record.periodStatuses[gradePeriodFilter]) : record.isValidated}
+          checked={
+            gradePeriodFilter
+              ? Boolean(record.periodStatuses[gradePeriodFilter])
+              : record.isValidated
+          }
           disabled={
             !gradePeriodFilter ||
             !record.enrollmentId ||
@@ -953,24 +1301,108 @@ const SuperAdminDashboard = () => {
               !gradePeriodFilter ||
               !record.enrollmentId ||
               !selectedGradePeriodIsOpen
-            ) return;
+            )
+              return;
             const isVisible = event.target.checked;
-            setGradeManagementRecords((current) => current.map((item) =>
-              item.key === record.key
-                ? { ...item, periodStatuses: { ...item.periodStatuses, [gradePeriodFilter]: isVisible } }
-                : item,
-            ));
-            try {
-              await api.patch(`/grades/admin/students/${record.enrollmentId}/periods/${gradePeriodFilter}`, { isVisible });
-              message.success(isVisible ? "Résultats rendus disponibles pour cet élève." : "Accès aux résultats retiré pour cette période.");
-            } catch {
-              setGradeManagementRecords((current) => current.map((item) =>
+            setGradeManagementRecords((current) =>
+              current.map((item) =>
                 item.key === record.key
-                  ? { ...item, periodStatuses: { ...item.periodStatuses, [gradePeriodFilter]: !isVisible } }
+                  ? {
+                      ...item,
+                      periodStatuses: {
+                        ...item.periodStatuses,
+                        [gradePeriodFilter]: isVisible,
+                      },
+                    }
                   : item,
-              ));
-              message.error("Impossible de modifier la disponibilité des résultats.");
+              ),
+            );
+            try {
+              await api.patch(
+                `/grades/admin/students/${record.enrollmentId}/periods/${gradePeriodFilter}`,
+                { isVisible },
+              );
+              message.success(
+                isVisible
+                  ? "Résultats rendus disponibles pour cet élève."
+                  : "Accès aux résultats retiré pour cette période.",
+              );
+            } catch {
+              setGradeManagementRecords((current) =>
+                current.map((item) =>
+                  item.key === record.key
+                    ? {
+                        ...item,
+                        periodStatuses: {
+                          ...item.periodStatuses,
+                          [gradePeriodFilter]: !isVisible,
+                        },
+                      }
+                    : item,
+                ),
+              );
+              message.error(
+                "Impossible de modifier la disponibilité des résultats.",
+              );
             }
+          }}
+        />
+      ),
+    },
+  ];
+
+  const eligibilityColumns: ColumnsType<OrderedEligibilitySubmissionRecord> = [
+    {
+      title: "Élève",
+      key: "student",
+      render: (_, record) => (
+        <span>
+          <strong>{record.studentName}</strong>
+          <small>
+            {record.matricule} · {record.className}
+          </small>
+        </span>
+      ),
+    },
+    {
+      title: "École",
+      dataIndex: "schoolName",
+      width: 220,
+    },
+    {
+      title: "Période",
+      key: "period",
+      width: 220,
+      render: (_, record) => (
+        <span>
+          <strong>{record.periodName}</strong>
+          <small>{record.schoolYear}</small>
+        </span>
+      ),
+    },
+    {
+      title: "Envoyé le",
+      dataIndex: "submittedAt",
+      width: 170,
+      render: (submittedAt: string) =>
+        new Intl.DateTimeFormat("fr-FR", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date(submittedAt)),
+    },
+    {
+      title: "Validation super admin",
+      key: "approval",
+      align: "center",
+      width: 180,
+      render: (_, record) => (
+        <Checkbox
+          checked={record.isSuperAdminApproved}
+          disabled={savingEligibilityRowKey === record.key}
+          className="super-admin-dashboard__grade-status-checkbox"
+          aria-label={`Valider l'eligibilite de ${record.studentName}`}
+          onChange={(event) => {
+            void setSuperAdminEligibilityApproval(record, event.target.checked);
           }}
         />
       ),
@@ -1069,27 +1501,19 @@ const SuperAdminDashboard = () => {
                   d="M91 75c45 17 79 31 115 21 35-10 61 12 97 21 29 7 42 23 48 40"
                 />
               </svg>
-              <div
-                className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kinshasa"
-              >
+              <div className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kinshasa">
                 <span /> <strong>Kinshasa</strong>
                 <small>1 école</small>
               </div>
-              <div
-                className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kongo"
-              >
+              <div className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kongo">
                 <span /> <strong>Kongo-Central</strong>
                 <small>1 école</small>
               </div>
-              <div
-                className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--katanga"
-              >
+              <div className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--katanga">
                 <span /> <strong>Haut-Katanga</strong>
                 <small>1 école</small>
               </div>
-              <div
-                className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kivu"
-              >
+              <div className="super-admin-dashboard__map-pin super-admin-dashboard__map-pin--kivu">
                 <span /> <strong>Nord-Kivu</strong>
                 <small>1 école</small>
               </div>
@@ -1121,8 +1545,14 @@ const SuperAdminDashboard = () => {
         </Col>
         <Col xs={24} xl={9}>
           <Card className="super-admin-dashboard__card super-admin-dashboard__ad-card">
-            <aside className="super-admin-dashboard__ad-slot" aria-label="Emplacement publicitaire">
-              <img src={educationPartnerAd} alt="Élèves découvrant des outils numériques en classe" />
+            <aside
+              className="super-admin-dashboard__ad-slot"
+              aria-label="Emplacement publicitaire"
+            >
+              <img
+                src={educationPartnerAd}
+                alt="Élèves découvrant des outils numériques en classe"
+              />
               <span className="super-admin-dashboard__ad-label">Publicité</span>
               <div className="super-admin-dashboard__ad-content">
                 <strong>Apprendre autrement</strong>
@@ -1320,21 +1750,35 @@ const SuperAdminDashboard = () => {
               formatter={(value) => Number(value).toLocaleString("fr-FR")}
             />
             <small>
-              {gradeSummary.activeStudents.toLocaleString("fr-FR")} élèves actifs
+              {gradeSummary.activeStudents.toLocaleString("fr-FR")} élèves
+              actifs
             </small>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
           <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--green">
-            <span className="super-admin-dashboard__metric-icon"><CheckCircleFilled /></span>
-            <Statistic title="Élèves avec cotes" value={gradeManagementRecords.filter((record) => record.isValidated).length} />
+            <span className="super-admin-dashboard__metric-icon">
+              <CheckCircleFilled />
+            </span>
+            <Statistic
+              title="Élèves avec cotes"
+              value={
+                gradeManagementRecords.filter((record) => record.isValidated)
+                  .length
+              }
+            />
             <small>Données réellement validées</small>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
           <Card className="super-admin-dashboard__metric super-admin-dashboard__metric--orange">
-            <span className="super-admin-dashboard__metric-icon"><FileTextOutlined /></span>
-            <Statistic title="Cotes enregistrées" value={gradeSummary.totalGrades} />
+            <span className="super-admin-dashboard__metric-icon">
+              <FileTextOutlined />
+            </span>
+            <Statistic
+              title="Cotes enregistrées"
+              value={gradeSummary.totalGrades}
+            />
             <small>Données enregistrées dans la base</small>
           </Card>
         </Col>
@@ -1482,6 +1926,61 @@ const SuperAdminDashboard = () => {
           dataSource={filteredGradeManagementRecords}
           pagination={false}
           scroll={{ x: 995 }}
+        />
+      </Card>
+      <Card
+        className="super-admin-dashboard__card"
+        style={{ marginTop: 18 }}
+        title="Eleves eligibles envoyes par les directions"
+        extra={
+          <Space>
+            <Tag
+              className={
+                pendingEligibilityCount > 0
+                  ? "super-admin-dashboard__tag super-admin-dashboard__tag--warning"
+                  : "super-admin-dashboard__tag super-admin-dashboard__tag--active"
+              }
+            >
+              {pendingEligibilityCount > 0
+                ? `${pendingEligibilityCount} en attente`
+                : "Tout valide"}
+            </Tag>
+            <Button onClick={() => setEligibilityModalOpen(true)}>
+              Voir details ({eligibilitySubmissions.length})
+            </Button>
+            <Button
+              type="primary"
+              icon={<CheckCircleFilled />}
+              disabled={pendingEligibilityCount === 0}
+              loading={isApprovingAllEligibility}
+              onClick={() => void approveAllPendingEligibility()}
+            >
+              Cocher tout le monde
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => void loadEligibilitySubmissions(true)}
+            >
+              Actualiser
+            </Button>
+          </Space>
+        }
+      >
+        <div className="super-admin-dashboard__table-tools">
+          <Input.Search
+            placeholder="Rechercher un eleve, matricule, classe ou ecole..."
+            allowClear
+            value={eligibilitySearch}
+            onChange={(event) => setEligibilitySearch(event.target.value)}
+          />
+        </div>
+        <Table
+          rowKey="key"
+          columns={eligibilityColumns}
+          dataSource={filteredEligibilitySubmissions}
+          loading={isLoadingEligibilitySubmissions}
+          pagination={false}
+          scroll={{ x: 980 }}
         />
       </Card>
     </section>
@@ -1729,7 +2228,9 @@ const SuperAdminDashboard = () => {
         </div>
         <div className="super-admin-dashboard__user-form">
           <label className="super-admin-dashboard__user-field">
-            <span>Prénom <b>*</b></span>
+            <span>
+              Prénom <b>*</b>
+            </span>
             <Input
               placeholder="Ex. Jacques"
               value={superAdminForm.firstName}
@@ -1742,7 +2243,9 @@ const SuperAdminDashboard = () => {
             />
           </label>
           <label className="super-admin-dashboard__user-field">
-            <span>Nom <b>*</b></span>
+            <span>
+              Nom <b>*</b>
+            </span>
             <Input
               placeholder="Ex. Bakole"
               value={superAdminForm.lastName}
@@ -1755,7 +2258,9 @@ const SuperAdminDashboard = () => {
             />
           </label>
           <label className="super-admin-dashboard__user-field super-admin-dashboard__user-field--wide">
-            <span>Adresse e-mail <b>*</b></span>
+            <span>
+              Adresse e-mail <b>*</b>
+            </span>
             <Input
               type="email"
               placeholder="administrateur@exemple.com"
@@ -1770,9 +2275,7 @@ const SuperAdminDashboard = () => {
           </label>
           <label className="super-admin-dashboard__user-field">
             <span>
-              {editingSuperAdmin
-                ? "Nouveau mot de passe"
-                : "Mot de passe *"}
+              {editingSuperAdmin ? "Nouveau mot de passe" : "Mot de passe *"}
             </span>
             <Input.Password
               value={superAdminForm.password}
@@ -1808,9 +2311,7 @@ const SuperAdminDashboard = () => {
           <label className="super-admin-dashboard__access-card">
             <Checkbox
               checked={superAdminForm.hasFullAccess}
-              disabled={
-                editingSuperAdmin?.email === "elpulgabakole@gmail.com"
-              }
+              disabled={editingSuperAdmin?.email === "elpulgabakole@gmail.com"}
               onChange={(event) =>
                 setSuperAdminForm((currentForm) => ({
                   ...currentForm,
@@ -1865,9 +2366,7 @@ const SuperAdminDashboard = () => {
               <h3>{confirmUserActionText.title}</h3>
               <p>{confirmUserActionText.description}</p>
               <div className="super-admin-dashboard__confirm-user">
-                <Avatar>
-                  {confirmUserActionText.name.charAt(0)}
-                </Avatar>
+                <Avatar>{confirmUserActionText.name.charAt(0)}</Avatar>
                 <span>
                   <strong>{confirmUserActionText.name}</strong>
                   <small>{confirmUserActionText.email}</small>
@@ -1876,6 +2375,55 @@ const SuperAdminDashboard = () => {
             </div>
           </div>
         )}
+      </Modal>
+      <Modal
+        open={eligibilityModalOpen}
+        onCancel={closeEligibilityModal}
+        footer={[
+          <Button
+            key="check-all"
+            type="primary"
+            icon={<CheckCircleFilled />}
+            disabled={pendingEligibilityCount === 0}
+            loading={isApprovingAllEligibility}
+            onClick={() => void approveAllPendingEligibility()}
+          >
+            Cocher tout le monde
+          </Button>,
+          <Button key="close" onClick={closeEligibilityModal}>
+            Fermer
+          </Button>,
+        ]}
+        title="Eleves envoyes par les directions"
+        centered
+        width={1080}
+      >
+        <Space wrap size={8} style={{ marginBottom: 14 }}>
+          <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--warning">
+            {pendingEligibilityCount} en attente de confirmation
+          </Tag>
+          <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--active">
+            {approvedEligibilityCount} deja confirmes
+          </Tag>
+          <Tag className="super-admin-dashboard__tag">
+            Total envoyes: {eligibilitySubmissions.length}
+          </Tag>
+        </Space>
+        <Input.Search
+          placeholder="Rechercher un eleve, matricule, classe, ecole ou periode..."
+          allowClear
+          value={eligibilitySearch}
+          onChange={(event) => setEligibilitySearch(event.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+        <Table
+          rowKey="key"
+          columns={eligibilityColumns}
+          dataSource={filteredEligibilitySubmissions}
+          loading={isLoadingEligibilitySubmissions}
+          pagination={false}
+          scroll={{ x: 980, y: 420 }}
+        />
       </Modal>
       <Modal
         open={Boolean(selectedSchool)}

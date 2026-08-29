@@ -115,8 +115,9 @@ export default function AcademicLibraryPage() {
   const [classId, setClassId] = useState<string>();
   const [periodId, setPeriodId] = useState<string>();
   const [search, setSearch] = useState("");
-  const [selectedStudent, setSelectedStudent] =
-    useState<ArchiveStudent | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<ArchiveStudent | null>(
+    null,
+  );
 
   const load = async () => {
     setLoading(true);
@@ -157,7 +158,9 @@ export default function AcademicLibraryPage() {
   }, [data?.grades]);
 
   const selectedYear = data?.years.find((year) => year.id === yearId);
-  const selectedClass = data?.classes.find((schoolClass) => schoolClass.id === classId);
+  const selectedClass = data?.classes.find(
+    (schoolClass) => schoolClass.id === classId,
+  );
   const selectedPeriod = data?.periods.find((period) => period.id === periodId);
 
   const columns: ColumnsType<ArchiveStudent> = [
@@ -171,7 +174,10 @@ export default function AcademicLibraryPage() {
       key: "student",
       render: (_, student) => (
         <Space>
-          <Avatar src={student.photo || undefined} icon={!student.photo ? <UserOutlined /> : undefined} />
+          <Avatar
+            src={student.photo || undefined}
+            icon={!student.photo ? <UserOutlined /> : undefined}
+          />
           <span className="academic-library__student-name">
             <strong className="student-name-unified">{student.name}</strong>
             <small>{student.matricule}</small>
@@ -185,7 +191,8 @@ export default function AcademicLibraryPage() {
       align: "right",
       render: (_, student) => (
         <strong>
-          {formatScore(student.totalObtained)} / {formatScore(student.totalWeight)}
+          {formatScore(student.totalObtained)} /{" "}
+          {formatScore(student.totalWeight)}
         </strong>
       ),
     },
@@ -201,7 +208,7 @@ export default function AcademicLibraryPage() {
       title: "Place",
       dataIndex: "rank",
       align: "center",
-      render: (value: number | null) => value ? `${value}e` : "—",
+      render: (value: number | null) => (value ? `${value}e` : "—"),
     },
     {
       title: "Conduite",
@@ -251,8 +258,8 @@ export default function AcademicLibraryPage() {
           <span>Histoire de l’école</span>
           <Title level={1}>Bibliothèque académique</Title>
           <Text>
-            Consultez les années archivées, les classes, les cotes et les bulletins
-            sans modifier l’historique.
+            Consultez les années archivées, les classes, les cotes et les
+            bulletins sans modifier l’historique.
           </Text>
         </div>
       </header>
@@ -379,7 +386,9 @@ export default function AcademicLibraryPage() {
                 icon={!selectedStudent.photo ? <UserOutlined /> : undefined}
               />
               <div>
-                <strong className="student-name-unified">{selectedStudent.name}</strong>
+                <strong className="student-name-unified">
+                  {selectedStudent.name}
+                </strong>
                 <span>
                   {selectedStudent.matricule} · {selectedStudent.className} ·{" "}
                   {selectedPeriod?.name}
@@ -400,7 +409,9 @@ export default function AcademicLibraryPage() {
               </Card>
               <Card>
                 <small>Place</small>
-                <strong>{selectedStudent.rank ? `${selectedStudent.rank}e` : "—"}</strong>
+                <strong>
+                  {selectedStudent.rank ? `${selectedStudent.rank}e` : "—"}
+                </strong>
               </Card>
               <Card>
                 <small>Conduite</small>

@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckOutlined, OrderedListOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Checkbox, Input, Select, Space, Table, Tag, Typography, message } from "antd";
+import {
+  CheckOutlined,
+  OrderedListOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+import {
+  Button,
+  Card,
+  Checkbox,
+  Input,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import axios from "axios";
 import { api } from "../../../lib/api";
 
@@ -41,7 +56,9 @@ const getApiErrorMessage = (error: unknown) => {
   if (!axios.isAxiosError(error)) return "Chargement impossible.";
   const responseMessage = error.response?.data?.message;
   if (Array.isArray(responseMessage)) return responseMessage.join(" ");
-  return typeof responseMessage === "string" ? responseMessage : "Chargement impossible.";
+  return typeof responseMessage === "string"
+    ? responseMessage
+    : "Chargement impossible.";
 };
 
 const buildDefaultInOrderMap = (rows: OrderedStudentRow[]) => {
@@ -61,8 +78,13 @@ export default function OrderedStudentsPage() {
   const [search, setSearch] = useState("");
   const [selectedClass, setSelectedClass] = useState(ALL_CLASSES_LABEL);
   const [selectedPeriod, setSelectedPeriod] = useState<string>();
-  const [inOrderByEnrollmentId, setInOrderByEnrollmentId] = useState<Record<string, boolean>>({});
-  const [savingEnrollmentIds, setSavingEnrollmentIds] = useState<Record<string, boolean>>({});
+  const [inOrderByEnrollmentId, setInOrderByEnrollmentId] = useState<
+    Record<string, boolean>
+  >({});
+  const [savingEnrollmentIds, setSavingEnrollmentIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [submittingEligibility, setSubmittingEligibility] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -114,7 +136,8 @@ export default function OrderedStudentsPage() {
   );
 
   const periodFilters = useMemo(
-    () => openPeriods.map((period) => ({ value: period.id, label: period.name })),
+    () =>
+      openPeriods.map((period) => ({ value: period.id, label: period.name })),
     [openPeriods],
   );
 
@@ -133,7 +156,10 @@ export default function OrderedStudentsPage() {
   }, [periodFilters, selectedPeriod]);
 
   const scopedStudents = useMemo(
-    () => (activeYear ? students.filter((student) => student.schoolYearId === activeYear.id) : []),
+    () =>
+      activeYear
+        ? students.filter((student) => student.schoolYearId === activeYear.id)
+        : [],
     [activeYear, students],
   );
 
@@ -146,7 +172,9 @@ export default function OrderedStudentsPage() {
             .map((student) => student.className)
             .filter((className) => className && className !== "—"),
         ),
-      ).sort((a, b) => a.localeCompare(b, "fr", { numeric: true, sensitivity: "base" })),
+      ).sort((a, b) =>
+        a.localeCompare(b, "fr", { numeric: true, sensitivity: "base" }),
+      ),
     ],
     [scopedStudents],
   );
@@ -200,7 +228,10 @@ export default function OrderedStudentsPage() {
     };
   }, [scopedStudents, selectedPeriod]);
 
-  const saveInOrderState = async (student: OrderedStudentRow, checked: boolean) => {
+  const saveInOrderState = async (
+    student: OrderedStudentRow,
+    checked: boolean,
+  ) => {
     const enrollmentId = student.enrollmentId;
     if (!enrollmentId || !selectedPeriod) return;
 
@@ -243,10 +274,11 @@ export default function OrderedStudentsPage() {
         const matchesSearch =
           !query ||
           `${student.name} ${student.matricule} ${student.className}`
-          .toLocaleLowerCase("fr")
-          .includes(query);
+            .toLocaleLowerCase("fr")
+            .includes(query);
         const matchesClass =
-          selectedClass === ALL_CLASSES_LABEL || student.className === selectedClass;
+          selectedClass === ALL_CLASSES_LABEL ||
+          student.className === selectedClass;
         const matchesPeriod = Boolean(selectedPeriod);
         return matchesSearch && matchesClass && matchesPeriod;
       })
@@ -267,27 +299,50 @@ export default function OrderedStudentsPage() {
 
   const checkedStudentsCount = useMemo(
     () =>
-      orderedStudents.filter((student) =>
-        Boolean(student.enrollmentId && inOrderByEnrollmentId[student.enrollmentId]),
+      scopedStudents.filter((student) =>
+        Boolean(
+          student.enrollmentId && inOrderByEnrollmentId[student.enrollmentId],
+        ),
       ).length,
-    [orderedStudents, inOrderByEnrollmentId],
+    [scopedStudents, inOrderByEnrollmentId],
   );
 
-  const handleConfirmEligibility = () => {
+  const handleConfirmEligibility = async () => {
     if (!selectedPeriod) {
-      message.warning("Selectionnez une periode ouverte avant de confirmer l eligibilite.");
+      message.warning(
+        "Selectionnez une periode ouverte avant de confirmer l eligibilite.",
+      );
       return;
     }
 
     if (checkedStudentsCount === 0) {
-      message.warning("Cochez au moins un eleve avant de confirmer l eligibilite.");
+      message.warning(
+        "Cochez au moins un eleve avant de confirmer l eligibilite.",
+      );
       return;
     }
 
-    const suffix = checkedStudentsCount > 1 ? "s" : "";
-    message.success(
-      `${checkedStudentsCount} eleve${suffix} confirme${suffix} pour l eligibilite.`,
-    );
+    setSubmittingEligibility(true);
+    try {
+      const response = await api.post<{
+        periodId: string;
+        submittedCount: number;
+        submittedAt: string;
+      }>("/ordered-students/checks/confirm", {
+        periodId: selectedPeriod,
+      });
+
+      const submittedCount =
+        response.data.submittedCount ?? checkedStudentsCount;
+      const suffix = submittedCount > 1 ? "s" : "";
+      message.success(
+        `${submittedCount} eleve${suffix} envoye${suffix} au super admin pour verification.`,
+      );
+    } catch (error) {
+      message.error(getApiErrorMessage(error));
+    } finally {
+      setSubmittingEligibility(false);
+    }
   };
 
   return (
@@ -304,8 +359,15 @@ export default function OrderedStudentsPage() {
             <Button
               type="primary"
               icon={<CheckOutlined />}
-              onClick={handleConfirmEligibility}
-              disabled={!selectedPeriod || checkedStudentsCount === 0 || loading || loadingChecks}
+              onClick={() => void handleConfirmEligibility()}
+              loading={submittingEligibility}
+              disabled={
+                !selectedPeriod ||
+                checkedStudentsCount === 0 ||
+                loading ||
+                loadingChecks ||
+                submittingEligibility
+              }
             >
               Confirmer l'eligibilite
             </Button>
@@ -316,8 +378,9 @@ export default function OrderedStudentsPage() {
         }
       >
         <Typography.Paragraph type="secondary">
-          Liste triee par classe, numero d ordre (si disponible), puis nom.
-          Le filtre periode affiche seulement les periodes ouvertes de l annee en cours.
+          Liste triee par classe, numero d ordre (si disponible), puis nom. Le
+          filtre periode affiche seulement les periodes ouvertes de l annee en
+          cours.
         </Typography.Paragraph>
         <Space wrap size={12} style={{ marginBottom: 18 }}>
           <Input.Search
@@ -343,7 +406,9 @@ export default function OrderedStudentsPage() {
           />
         </Space>
         {loadingChecks && (
-          <Typography.Text type="secondary">Chargement des statuts en ordre...</Typography.Text>
+          <Typography.Text type="secondary">
+            Chargement des statuts en ordre...
+          </Typography.Text>
         )}
         {!activeYear && (
           <Typography.Paragraph type="warning" style={{ marginTop: -6 }}>
@@ -376,20 +441,26 @@ export default function OrderedStudentsPage() {
             {
               title: "Eleve",
               dataIndex: "name",
-              render: (value: string) => <span className="student-name-unified">{value}</span>,
+              render: (value: string) => (
+                <span className="student-name-unified">{value}</span>
+              ),
             },
             {
               title: "Matricule",
               dataIndex: "matricule",
               render: (value: string) => (
-                <code className="ordered-students__matricule student-name-unified">{value}</code>
+                <code className="ordered-students__matricule student-name-unified">
+                  {value}
+                </code>
               ),
             },
             {
               title: "Classe",
               dataIndex: "className",
               render: (value: string) => (
-                <Tag className="ordered-students__class-tag student-name-unified">{value}</Tag>
+                <Tag className="ordered-students__class-tag student-name-unified">
+                  {value}
+                </Tag>
               ),
             },
             {
@@ -400,14 +471,27 @@ export default function OrderedStudentsPage() {
                 <span className="ordered-students__check-wrap">
                   <Checkbox
                     className="ordered-students__check"
-                    checked={Boolean(student.enrollmentId && inOrderByEnrollmentId[student.enrollmentId])}
-                    disabled={!selectedPeriod || !student.enrollmentId || Boolean(student.enrollmentId && savingEnrollmentIds[student.enrollmentId])}
+                    checked={Boolean(
+                      student.enrollmentId &&
+                      inOrderByEnrollmentId[student.enrollmentId],
+                    )}
+                    disabled={
+                      !selectedPeriod ||
+                      !student.enrollmentId ||
+                      Boolean(
+                        student.enrollmentId &&
+                        savingEnrollmentIds[student.enrollmentId],
+                      )
+                    }
                     onChange={(event) => {
                       void saveInOrderState(student, event.target.checked);
                     }}
                     aria-label={`Marquer ${student.name} en ordre`}
                   />
-                  {Boolean(student.enrollmentId && inOrderByEnrollmentId[student.enrollmentId]) && (
+                  {Boolean(
+                    student.enrollmentId &&
+                    inOrderByEnrollmentId[student.enrollmentId],
+                  ) && (
                     <CheckOutlined className="ordered-students__check-sign" />
                   )}
                 </span>

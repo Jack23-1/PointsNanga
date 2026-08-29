@@ -78,12 +78,17 @@ model OrderedStudentCheck {
   enrollmentId BigInt   @map("enrollment_id")
   periodId     BigInt   @map("period_id")
   isInOrder    Boolean  @default(false) @map("is_in_order")
+  submittedToSuperAdminAt DateTime? @map("submitted_to_super_admin_at")
+  isSuperAdminApproved Boolean @default(false) @map("is_super_admin_approved")
+  superAdminApprovedAt DateTime? @map("super_admin_approved_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@unique([schoolId, enrollmentId, periodId])
   @@index([schoolId, periodId])
   @@index([enrollmentId])
+  @@index([submittedToSuperAdminAt])
+  @@index([isSuperAdminApproved])
   @@map("ordered_student_checks")
 }
 

@@ -74,9 +74,7 @@ const ProtectedRoute = ({
     primarySuperAdminOnly &&
     !(user as { hasFullAccess?: boolean }).hasFullAccess
   ) {
-    return (
-      <Navigate to={`${ROUTES.DASHBOARD}?workspace=grades`} replace />
-    );
+    return <Navigate to={`${ROUTES.DASHBOARD}?workspace=grades`} replace />;
   }
 
   return <MainLayout>{children}</MainLayout>;
@@ -122,10 +120,7 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.SCHOOLS,
     element: (
-      <ProtectedRoute
-        allowedRoles={["super_admin"]}
-        primarySuperAdminOnly
-      >
+      <ProtectedRoute allowedRoles={["super_admin"]} primarySuperAdminOnly>
         <SchoolsPage />
       </ProtectedRoute>
     ),

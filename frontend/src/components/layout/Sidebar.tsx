@@ -44,7 +44,7 @@ const Sidebar: React.FC = () => {
           ? ROUTES.DIRECTOR_LOGIN
           : user?.role === "teacher"
             ? ROUTES.HOMEROOM_LOGIN
-          : ROUTES.LOGIN;
+            : ROUTES.LOGIN;
     logout();
     handleNavigation(loginRoute);
   };
@@ -95,13 +95,15 @@ const Sidebar: React.FC = () => {
           key: "super-admin-grades",
           icon: <BookOutlined />,
           label: "Gestion de cotes",
-          onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
+          onClick: () =>
+            handleNavigation(`${ROUTES.DASHBOARD}?workspace=grades`),
         },
         {
           key: "super-admin-users",
           icon: <TeamOutlined />,
           label: "Gestion des utilisateurs",
-          onClick: () => handleNavigation(`${ROUTES.DASHBOARD}?workspace=users`),
+          onClick: () =>
+            handleNavigation(`${ROUTES.DASHBOARD}?workspace=users`),
         },
         {
           key: "logout",
@@ -200,12 +202,14 @@ const Sidebar: React.FC = () => {
           onClick: () => handleNavigation(ROUTES.DASHBOARD),
         },
         ...(user.isHomeroom
-          ? [{
-              key: ROUTES.TEACHER_COURSES,
-              icon: <ReadOutlined />,
-              label: "Mes cotes",
-              onClick: () => handleNavigation(ROUTES.TEACHER_COURSES),
-            }]
+          ? [
+              {
+                key: ROUTES.TEACHER_COURSES,
+                icon: <ReadOutlined />,
+                label: "Mes cotes",
+                onClick: () => handleNavigation(ROUTES.TEACHER_COURSES),
+              },
+            ]
           : []),
         {
           key: "logout",
@@ -341,7 +345,7 @@ const Sidebar: React.FC = () => {
                 : location.pathname === ROUTES.DASHBOARD &&
                     location.search === "?workspace=users"
                   ? "super-admin-users"
-                : location.pathname,
+                  : location.pathname,
           ]}
           items={getMenuItems()}
           style={{ borderRight: 0 }}

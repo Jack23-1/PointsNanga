@@ -47,7 +47,9 @@ export class CreateSchoolDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000000)
-  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
+  @Matches(
+    /^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/,
+  )
   logo?: string;
 
   @IsOptional()
@@ -101,7 +103,6 @@ export class CreateClassDto {
   @IsNotEmpty()
   @MaxLength(150)
   label: string;
-
 }
 
 export class UpdateClassDto extends CreateClassDto {}
@@ -141,7 +142,9 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000000)
-  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
+  @Matches(
+    /^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/,
+  )
   photo?: string;
 }
 
@@ -172,7 +175,6 @@ export class CreateCourseDto {
   @IsNotEmpty()
   @MaxLength(150)
   label: string;
-
 }
 
 export class UpdateCourseDto extends CreateCourseDto {}
@@ -246,7 +248,9 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000000)
-  @Matches(/^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/)
+  @Matches(
+    /^(https:\/\/[^\s]{1,2048}|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})$/,
+  )
   photo?: string;
 }
 
@@ -464,6 +468,16 @@ export class SaveOrderedStudentCheckDto {
 
   @IsBoolean()
   isInOrder: boolean;
+}
+
+export class ConfirmOrderedStudentChecksDto {
+  @Matches(/^[1-9]\d{0,18}$/)
+  periodId: string;
+}
+
+export class SetOrderedStudentSuperAdminApprovalDto {
+  @IsBoolean()
+  isApproved: boolean;
 }
 
 export class AssignStudentDto {
