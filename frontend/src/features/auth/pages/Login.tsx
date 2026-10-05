@@ -207,7 +207,7 @@ export default function Login() {
         role: "student",
         matricule,
         schoolName: resolvedStudent.schoolName,
-        password: password.trim().toUpperCase(),
+        password,
       });
 
       try {
@@ -642,16 +642,10 @@ export default function Login() {
                       value={password}
                       ref={passwordInputRef}
                       autoComplete="current-password"
-                      autoCapitalize="characters"
-                      maxLength={11}
+                      autoCapitalize="none"
                       spellCheck={false}
                       onChange={(e) => {
-                        setPassword(
-                          e.target.value
-                            .toUpperCase()
-                            .replace(/\s/g, "")
-                            .slice(0, 11),
-                        );
+                        setPassword(e.target.value);
                         setErrorMsg(null);
                       }}
                       onFocus={() => setMobileFocusField("password")}

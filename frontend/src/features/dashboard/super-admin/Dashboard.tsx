@@ -119,6 +119,17 @@ type OrderedEligibilitySubmissionRecord = {
   superAdminApprovedAt: string | null;
 };
 
+type OrderedEligibilitySchoolGroup = {
+  key: string;
+  schoolId: string;
+  schoolName: string;
+  totalCount: number;
+  pendingCount: number;
+  approvedCount: number;
+  submittedAt: string;
+  students: OrderedEligibilitySubmissionRecord[];
+};
+
 type SuperAdminRecord = {
   key: string;
   id: string;
@@ -245,9 +256,8 @@ const SuperAdminDashboard = () => {
   const [eligibilitySearch, setEligibilitySearch] = useState("");
   const [isLoadingEligibilitySubmissions, setIsLoadingEligibilitySubmissions] =
     useState(false);
-  const [savingEligibilityRowKey, setSavingEligibilityRowKey] = useState<
-    string | null
-  >(null);
+  const [integratingEligibilityScope, setIntegratingEligibilityScope] =
+    useState<string | null>(null);
   const [isApprovingAllEligibility, setIsApprovingAllEligibility] =
     useState(false);
   const [eligibilityModalOpen, setEligibilityModalOpen] = useState(false);
@@ -590,9 +600,17 @@ const SuperAdminDashboard = () => {
       !superAdminForm.firstName.trim() ||
       !superAdminForm.lastName.trim() ||
       !superAdminForm.email.trim() ||
-      (!editingSuperAdmin && !superAdminForm.password.trim())
+      (!editingSuperAdmin && !superAdminForm.password)
     ) {
       message.warning("Complétez les champs obligatoires avant de continuer.");
+      return;
+    }
+
+    if (
+      superAdminForm.password &&
+      (superAdminForm.password.length < 12 || superAdminForm.password.length > 72)
+    ) {
+      message.warning("Le mot de passe doit contenir entre 12 et 72 caractères.");
       return;
     }
 
@@ -612,7 +630,7 @@ const SuperAdminDashboard = () => {
             email: superAdminForm.email,
             isActive: superAdminForm.status === "Actif",
             hasFullAccess: superAdminForm.hasFullAccess,
-            ...(superAdminForm.password.trim()
+            ...(superAdminForm.password
               ? { password: superAdminForm.password }
               : {}),
           },
@@ -778,6 +796,55 @@ const SuperAdminDashboard = () => {
     });
   }, [eligibilitySearch, eligibilitySubmissions]);
 
+  const groupedEligibilitySubmissions = useMemo(() => {
+    const grouped = new Map<string, OrderedEligibilitySchoolGroup>();
+
+    filteredEligibilitySubmissions.forEach((record) => {
+      const groupKey = record.schoolId || record.schoolName;
+      const existingGroup = grouped.get(groupKey);
+
+      if (!existingGroup) {
+        grouped.set(groupKey, {
+          key: groupKey,
+          schoolId: record.schoolId,
+          schoolName: record.schoolName,
+          totalCount: 1,
+          pendingCount: record.isSuperAdminApproved ? 0 : 1,
+          approvedCount: record.isSuperAdminApproved ? 1 : 0,
+          submittedAt: record.submittedAt,
+          students: [record],
+        });
+        return;
+      }
+
+      const existingTime = Date.parse(existingGroup.submittedAt);
+      const nextTime = Date.parse(record.submittedAt);
+      if (
+        (Number.isFinite(nextTime) && !Number.isFinite(existingTime)) ||
+        nextTime > existingTime
+      ) {
+        existingGroup.submittedAt = record.submittedAt;
+      }
+
+      existingGroup.totalCount += 1;
+      existingGroup.pendingCount += record.isSuperAdminApproved ? 0 : 1;
+      existingGroup.approvedCount += record.isSuperAdminApproved ? 1 : 0;
+      existingGroup.students.push(record);
+    });
+
+    return Array.from(grouped.values())
+      .map((group) => ({
+        ...group,
+        students: [...group.students].sort((a, b) =>
+          `${a.studentName} ${a.className}`.localeCompare(
+            `${b.studentName} ${b.className}`,
+            "fr",
+          ),
+        ),
+      }))
+      .sort((a, b) => a.schoolName.localeCompare(b.schoolName, "fr"));
+  }, [filteredEligibilitySubmissions]);
+
   const pendingEligibilityCount = useMemo(
     () =>
       eligibilitySubmissions.filter((record) => !record.isSuperAdminApproved)
@@ -792,97 +859,33 @@ const SuperAdminDashboard = () => {
     [eligibilitySubmissions],
   );
 
-  const setSuperAdminEligibilityApproval = async (
-    record: OrderedEligibilitySubmissionRecord,
-    isApproved: boolean,
+  const integrateEligibilityRecords = async (
+    records: OrderedEligibilitySubmissionRecord[],
+    label?: string,
   ) => {
-    const previousValue = record.isSuperAdminApproved;
-    const previousApprovedAt = record.superAdminApprovedAt;
-    const optimisticApprovedAt = isApproved ? new Date().toISOString() : null;
-
-    setSavingEligibilityRowKey(record.key);
-    setEligibilitySubmissions((current) =>
-      current.map((item) =>
-        item.key === record.key
-          ? {
-              ...item,
-              isSuperAdminApproved: isApproved,
-              superAdminApprovedAt: optimisticApprovedAt,
-            }
-          : item,
-      ),
-    );
-
-    try {
-      await api.patch(
-        `/ordered-students/eligibility-submissions/${record.enrollmentId}/periods/${record.periodId}`,
-        { isApproved },
-      );
-
-      setGradeManagementRecords((current) =>
-        current.map((item) => {
-          if (item.enrollmentId !== record.enrollmentId) return item;
-          if (!item.periods.some((period) => period.id === record.periodId)) {
-            return item;
-          }
-
-          const periodStatuses = {
-            ...item.periodStatuses,
-            [record.periodId]: isApproved,
-          };
-
-          return {
-            ...item,
-            periodStatuses,
-            isValidated: Object.values(periodStatuses).some(Boolean),
-          };
-        }),
-      );
-
-      message.success(
-        isApproved
-          ? "Eligibilite validee et integree a la grille."
-          : "Validation retiree et eleve retire de la grille.",
-      );
-    } catch {
-      setEligibilitySubmissions((current) =>
-        current.map((item) =>
-          item.key === record.key
-            ? {
-                ...item,
-                isSuperAdminApproved: previousValue,
-                superAdminApprovedAt: previousApprovedAt,
-              }
-            : item,
-        ),
-      );
-      message.error("Impossible de mettre a jour la validation super admin.");
-    } finally {
-      setSavingEligibilityRowKey(null);
-    }
-  };
-
-  const approveAllPendingEligibility = async () => {
-    const pendingRecords = eligibilitySubmissions.filter(
-      (record) => !record.isSuperAdminApproved,
-    );
+    const pendingRecords = records.filter((record) => !record.isSuperAdminApproved);
 
     if (pendingRecords.length === 0) {
-      message.info("Tous les eleves envoyes sont deja valides.");
+      message.info(
+        label
+          ? `Aucun eleve en attente pour ${label}.`
+          : "Tous les eleves sont deja integres.",
+      );
       return;
     }
 
-    setIsApprovingAllEligibility(true);
+    const pendingKeys = new Set(pendingRecords.map((record) => record.key));
     const optimisticApprovedAt = new Date().toISOString();
+    setIsApprovingAllEligibility(true);
     setEligibilitySubmissions((current) =>
       current.map((item) =>
-        item.isSuperAdminApproved
-          ? item
-          : {
+        pendingKeys.has(item.key)
+          ? {
               ...item,
               isSuperAdminApproved: true,
               superAdminApprovedAt: optimisticApprovedAt,
-            },
+            }
+          : item,
       ),
     );
 
@@ -961,17 +964,17 @@ const SuperAdminDashboard = () => {
           ),
         );
         message.warning(
-          `${successfulRecords.length} validation(s) appliquee(s), ${failedRecords.length} echec(s).`,
+          `${successfulRecords.length} eleve(s) integre(s), ${failedRecords.length} echec(s).`,
         );
       } else {
         message.success(
-          `${successfulRecords.length} eleve(s) valide(s) et integre(s) a la grille.`,
+          `${successfulRecords.length} eleve(s) integre(s) dans la grille super admin.`,
         );
       }
     } catch {
       setEligibilitySubmissions((current) =>
         current.map((item) =>
-          pendingRecords.some((record) => record.key === item.key)
+          pendingKeys.has(item.key)
             ? {
                 ...item,
                 isSuperAdminApproved: false,
@@ -980,9 +983,20 @@ const SuperAdminDashboard = () => {
             : item,
         ),
       );
-      message.error("Impossible d'appliquer la validation globale.");
+      message.error("Impossible d'integrer les eleves selectionnes.");
     } finally {
       setIsApprovingAllEligibility(false);
+    }
+  };
+
+  const integrateSchoolEligibility = async (
+    group: OrderedEligibilitySchoolGroup,
+  ) => {
+    setIntegratingEligibilityScope(group.key);
+    try {
+      await integrateEligibilityRecords(group.students, group.schoolName);
+    } finally {
+      setIntegratingEligibilityScope(null);
     }
   };
 
@@ -1351,60 +1365,80 @@ const SuperAdminDashboard = () => {
     },
   ];
 
-  const eligibilityColumns: ColumnsType<OrderedEligibilitySubmissionRecord> = [
+  const eligibilityGroupsColumns: ColumnsType<OrderedEligibilitySchoolGroup> = [
     {
-      title: "Élève",
-      key: "student",
-      render: (_, record) => (
+      title: "Ecole",
+      dataIndex: "schoolName",
+      width: 240,
+      render: (schoolName: string, group) => (
         <span>
-          <strong>{record.studentName}</strong>
+          <strong>{schoolName}</strong>
           <small>
-            {record.matricule} · {record.className}
+            {group.totalCount} eleve{group.totalCount > 1 ? "s" : ""} envoye
+            {group.totalCount > 1 ? "s" : ""}
           </small>
         </span>
       ),
     },
     {
-      title: "École",
-      dataIndex: "schoolName",
-      width: 220,
-    },
-    {
-      title: "Période",
-      key: "period",
-      width: 220,
-      render: (_, record) => (
-        <span>
-          <strong>{record.periodName}</strong>
-          <small>{record.schoolYear}</small>
-        </span>
+      title: "Liste des eleves",
+      key: "students",
+      render: (_, group) => (
+        <Space direction="vertical" size={4}>
+          {group.students.map((record) => (
+            <span key={record.key}>
+              <strong>{record.studentName}</strong>
+              <small>
+                {record.matricule} · {record.className} · {record.periodName}
+              </small>
+            </span>
+          ))}
+        </Space>
       ),
     },
     {
-      title: "Envoyé le",
-      dataIndex: "submittedAt",
-      width: 170,
-      render: (submittedAt: string) =>
-        new Intl.DateTimeFormat("fr-FR", {
-          dateStyle: "short",
-          timeStyle: "short",
-        }).format(new Date(submittedAt)),
+      title: "Etat",
+      key: "status",
+      width: 220,
+      render: (_, group) => {
+        const submittedAt = Date.parse(group.submittedAt);
+        return (
+          <Space direction="vertical" size={4}>
+            <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--warning">
+              {group.pendingCount} en attente
+            </Tag>
+            <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--active">
+              {group.approvedCount} integres
+            </Tag>
+            <Typography.Text type="secondary">
+              Dernier envoi: {" "}
+              {Number.isFinite(submittedAt)
+                ? new Intl.DateTimeFormat("fr-FR", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(new Date(group.submittedAt))
+                : "—"}
+            </Typography.Text>
+          </Space>
+        );
+      },
     },
     {
-      title: "Validation super admin",
-      key: "approval",
+      title: "Action",
+      key: "action",
       align: "center",
-      width: 180,
-      render: (_, record) => (
-        <Checkbox
-          checked={record.isSuperAdminApproved}
-          disabled={savingEligibilityRowKey === record.key}
-          className="super-admin-dashboard__grade-status-checkbox"
-          aria-label={`Valider l'eligibilite de ${record.studentName}`}
-          onChange={(event) => {
-            void setSuperAdminEligibilityApproval(record, event.target.checked);
-          }}
-        />
+      width: 150,
+      render: (_, group) => (
+        <Button
+          type="primary"
+          disabled={group.pendingCount === 0}
+          loading={
+            isApprovingAllEligibility && integratingEligibilityScope === group.key
+          }
+          onClick={() => void integrateSchoolEligibility(group)}
+        >
+          Integrer
+        </Button>
       ),
     },
   ];
@@ -1949,15 +1983,6 @@ const SuperAdminDashboard = () => {
               Voir details ({eligibilitySubmissions.length})
             </Button>
             <Button
-              type="primary"
-              icon={<CheckCircleFilled />}
-              disabled={pendingEligibilityCount === 0}
-              loading={isApprovingAllEligibility}
-              onClick={() => void approveAllPendingEligibility()}
-            >
-              Cocher tout le monde
-            </Button>
-            <Button
               icon={<ReloadOutlined />}
               onClick={() => void loadEligibilitySubmissions(true)}
             >
@@ -1976,11 +2001,11 @@ const SuperAdminDashboard = () => {
         </div>
         <Table
           rowKey="key"
-          columns={eligibilityColumns}
-          dataSource={filteredEligibilitySubmissions}
+          columns={eligibilityGroupsColumns}
+          dataSource={groupedEligibilitySubmissions}
           loading={isLoadingEligibilitySubmissions}
           pagination={false}
-          scroll={{ x: 980 }}
+          scroll={{ x: 1120 }}
         />
       </Card>
     </section>
@@ -2380,16 +2405,6 @@ const SuperAdminDashboard = () => {
         open={eligibilityModalOpen}
         onCancel={closeEligibilityModal}
         footer={[
-          <Button
-            key="check-all"
-            type="primary"
-            icon={<CheckCircleFilled />}
-            disabled={pendingEligibilityCount === 0}
-            loading={isApprovingAllEligibility}
-            onClick={() => void approveAllPendingEligibility()}
-          >
-            Cocher tout le monde
-          </Button>,
           <Button key="close" onClick={closeEligibilityModal}>
             Fermer
           </Button>,
@@ -2418,11 +2433,11 @@ const SuperAdminDashboard = () => {
         />
         <Table
           rowKey="key"
-          columns={eligibilityColumns}
-          dataSource={filteredEligibilitySubmissions}
+          columns={eligibilityGroupsColumns}
+          dataSource={groupedEligibilitySubmissions}
           loading={isLoadingEligibilitySubmissions}
           pagination={false}
-          scroll={{ x: 980, y: 420 }}
+          scroll={{ x: 1120, y: 420 }}
         />
       </Modal>
       <Modal

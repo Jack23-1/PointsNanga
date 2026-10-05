@@ -2563,7 +2563,19 @@ export class AcademicService {
         classes: { id_ecole: toBigInt(schoolId) },
         id_annee_scolaire: activeYear.id_annee_scolaire,
       },
-      include: { classes: true, professeurs: true },
+      include: {
+        classes: {
+          include: {
+            ecoles: {
+              select: {
+                nom_ecole: true,
+                ville: true,
+              },
+            },
+          },
+        },
+        professeurs: true,
+      },
     });
     const titularMap = new Map(
       titulars.map((item) => [item.id_titulaire.toString(), item]),
@@ -2612,7 +2624,10 @@ export class AcademicService {
       return {
         id: submission.id,
         periodId: submission.periodId.toString(),
+        schoolName: titular?.classes.ecoles.nom_ecole ?? "École inconnue",
+        province: titular?.classes.ecoles.ville ?? "Province inconnue",
         className: titular?.classes.libelle ?? "Classe inconnue",
+        classCode: titular?.classes.code_classe ?? null,
         teacherName: titular
           ? `${titular.professeurs.nom} ${titular.professeurs.prenom}`
           : "Titulaire inconnu",
@@ -3128,7 +3143,7 @@ export class AcademicService {
   async createSchool(dto: CreateSchoolDto) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
-        const initialPassword = clean(dto.password) ?? generateSchoolPassword();
+        const initialPassword = dto.password ?? generateSchoolPassword();
         const school = await this.prisma.ecoles.create({
           data: {
             nom_ecole: dto.name.trim(),

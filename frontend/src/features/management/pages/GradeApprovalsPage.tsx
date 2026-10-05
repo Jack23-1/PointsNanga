@@ -9,7 +9,10 @@ type SubmissionStatus = "SUBMITTED" | "APPROVED" | "REOPENED" | "REJECTED";
 
 interface GradeSubmission {
   id: string;
+  schoolName: string;
+  province: string;
   className: string;
+  classCode?: string | null;
   teacherName: string;
   periodName: string;
   schoolYear: string;
@@ -121,7 +124,7 @@ export default function GradeApprovalsPage() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    return items.filter((item) => !query || `${item.teacherName} ${item.className} ${item.periodName} ${item.schoolYear}`.toLocaleLowerCase("fr").includes(query));
+    return items.filter((item) => !query || `${item.schoolName} ${item.province} ${item.teacherName} ${item.className} ${item.classCode ?? ""} ${item.periodName} ${item.schoolYear}`.toLocaleLowerCase("fr").includes(query));
   }, [items, search]);
 
   const totalWeight = gradebook?.courses.reduce((sum, course) => sum + course.weight, 0) ?? 0;
@@ -219,7 +222,7 @@ export default function GradeApprovalsPage() {
         <Typography.Paragraph type="secondary">
           Approuvez les grilles reçues ou rejetez-les avec un commentaire pour demander une correction au titulaire.
         </Typography.Paragraph>
-        <Input.Search value={search} onChange={(event) => setSearch(event.target.value)} allowClear placeholder="Titulaire, classe ou période..." style={{ maxWidth: 420, marginBottom: 18 }} />
+        <Input.Search value={search} onChange={(event) => setSearch(event.target.value)} allowClear placeholder="Ecole, province, classe, titulaire ou période..." style={{ maxWidth: 460, marginBottom: 18 }} />
         <Table
           rowKey="id"
           loading={loading}
@@ -227,8 +230,29 @@ export default function GradeApprovalsPage() {
           pagination={false}
           columns={[
             { title: "N°", width: 65, render: (_value, _item, index) => index + 1 },
+            {
+              title: "Ecole / Province",
+              width: 250,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{item.schoolName}</Typography.Text>
+                  <Typography.Text type="secondary">{item.province}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "Classe",
+              width: 220,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{item.className}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {item.classCode ? `Code: ${item.classCode}` : "Code: —"}
+                  </Typography.Text>
+                </Space>
+              ),
+            },
             { title: "Titulaire", dataIndex: "teacherName" },
-            { title: "Classe", dataIndex: "className" },
             { title: "Période", render: (_, item) => <Space direction="vertical" size={0}><span>{item.periodName}</span><Typography.Text type="secondary">{item.schoolYear}</Typography.Text></Space> },
             { title: "Envoyée le", render: (_, item) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.submittedAt)) },
             { title: "Statut", render: (_, item) => <Space wrap><Tag color={item.status === "SUBMITTED" ? "gold" : item.status === "APPROVED" ? "green" : item.status === "REJECTED" ? "red" : "blue"}>{item.status === "SUBMITTED" ? "À APPROUVER" : item.status === "APPROVED" ? "APPROUVÉE" : item.status === "REJECTED" ? "REJETÉE" : "OUVERTE"}</Tag><Tag color={item.periodIsOpen ? "green" : "default"}>{item.periodIsOpen ? "Période ouverte" : "Période fermée"}</Tag></Space> },

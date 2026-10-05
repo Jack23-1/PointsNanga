@@ -415,6 +415,10 @@ const StudentsPage = () => {
 
   const deleteStudent = async () => {
     if (!studentToDelete || !deletePassword) return;
+    if (deletePassword.length > 72) {
+      setDeleteError("Le mot de passe ne doit pas dépasser 72 caractères.");
+      return;
+    }
     setIsDeleting(true);
     setDeleteError(null);
     try {
@@ -725,9 +729,8 @@ const StudentsPage = () => {
         </span>
         <div>
           <span>Mot de passe commun des élèves</span>
-          <small>À utiliser pour consulter leurs résultats</small>
+          <small>Pour consulter les résultats, utilisez le mot de passe communiqué par l’administration.</small>
         </div>
-        <code>POINTSNANGA</code>
       </div>
 
       <Row gutter={[14, 14]} className="students-directory__summary">

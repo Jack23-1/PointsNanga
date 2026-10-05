@@ -683,7 +683,7 @@ const SchoolsPage = () => {
         >
           <Text>L’ancien mot de passe de <strong>{schoolToReset?.name}</strong> ne fonctionnera plus.</Text>
           <Form form={resetPasswordForm} layout="vertical" style={{ marginTop: 18 }}>
-            <Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}>
+            <Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }, { max: 72, message: "Utilisez 72 caractères maximum." }]}>
               <Input.Password autoComplete="new-password" placeholder="Au moins 8 caractères" />
             </Form.Item>
             <Form.Item

@@ -614,7 +614,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
           <Form.Item
             name="password"
             label="Nouveau mot de passe"
-            rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}
+            rules={[{ required: true, message: "Saisissez le nouveau mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }, { max: 72, message: "Utilisez 72 caractères maximum." }]}
           >
             <Input.Password autoComplete="new-password" placeholder="Au moins 8 caractères" />
           </Form.Item>
@@ -663,7 +663,7 @@ const AcademicDirectoryPage = ({ kind }: { kind: DirectoryKind }) => {
     resetPasswordForm.resetFields();
     Modal.confirm({
       title: `Modifier le mot de passe · ${row.primary}`,
-      content: <Form form={resetPasswordForm} layout="vertical" className="academic-directory__password-form"><p>Le matricule <strong>{row.matricule}</strong> restera inchangé. Définissez uniquement un nouveau mot de passe.</p><Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }]}><Input.Password /></Form.Item><Form.Item name="confirmation" label="Confirmer" dependencies={["password"]} rules={[{ required: true, message: "Confirmez le mot de passe." }, ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue("password") === value ? Promise.resolve() : Promise.reject(new Error("Les mots de passe ne correspondent pas.")); } })]}><Input.Password /></Form.Item></Form>,
+      content: <Form form={resetPasswordForm} layout="vertical" className="academic-directory__password-form"><p>Le matricule <strong>{row.matricule}</strong> restera inchangé. Définissez uniquement un nouveau mot de passe.</p><Form.Item name="password" label="Nouveau mot de passe" rules={[{ required: true, message: "Saisissez le mot de passe." }, { min: 8, message: "Utilisez au moins 8 caractères." }, { max: 72, message: "Utilisez 72 caractères maximum." }]}><Input.Password /></Form.Item><Form.Item name="confirmation" label="Confirmer" dependencies={["password"]} rules={[{ required: true, message: "Confirmez le mot de passe." }, ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue("password") === value ? Promise.resolve() : Promise.reject(new Error("Les mots de passe ne correspondent pas.")); } })]}><Input.Password /></Form.Item></Form>,
       okText: "Enregistrer", cancelText: "Annuler", centered: true,
       async onOk() { const values = await resetPasswordForm.validateFields(); const response = await api.post<{ matricule: string }>(`/teachers/${row.key}/reset-password`, { password: values.password }); message.success(`Accès enregistré. Matricule : ${response.data.matricule}`); await loadData(); },
     });

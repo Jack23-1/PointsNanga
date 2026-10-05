@@ -41,7 +41,7 @@ export default function HomeroomTeacherLogin() {
     const identifier = matricule.trim().toUpperCase();
     let cancelled = false;
     setResolvedSchool(null);
-    if (!/^(TIT|ENS)-[0-9A-Z]{6}$/.test(identifier)) {
+    if (!/^[A-Z0-9-]{3,50}$/.test(identifier)) {
       setIsResolvingSchool(false);
       return;
     }
@@ -75,6 +75,11 @@ export default function HomeroomTeacherLogin() {
 
     if (!matricule.trim() || !password) {
       setErrorMsg("Veuillez renseigner le matricule et le mot de passe.");
+      return;
+    }
+
+    if (password.length > 72) {
+      setErrorMsg("Le mot de passe ne doit pas dépasser 72 caractères.");
       return;
     }
 
@@ -210,7 +215,7 @@ export default function HomeroomTeacherLogin() {
                   setErrorMsg(null);
                 }}
                 placeholder="Ex. TIT-A7K29P"
-                maxLength={10}
+                maxLength={50}
                 autoComplete="username"
               />
             </div>

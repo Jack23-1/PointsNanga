@@ -21,8 +21,8 @@ export default function SuperAdminResetPassword() {
       message.error("Lien de réinitialisation invalide.");
       return;
     }
-    if (password.length < 8) {
-      message.error("Le mot de passe doit contenir au moins 8 caractères.");
+    if (password.length < 8 || password.length > 72) {
+      message.error("Le mot de passe doit contenir entre 8 et 72 caractères.");
       return;
     }
     if (password !== confirmation) {

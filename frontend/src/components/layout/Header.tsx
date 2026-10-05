@@ -64,7 +64,10 @@ const Header: React.FC = () => {
   const [gradeSubmissions, setGradeSubmissions] = useState<
     Array<{
       id: string;
+      schoolName: string;
+      province: string;
       className: string;
+      classCode?: string | null;
       teacherName: string;
       periodName: string;
       submittedAt: string;
@@ -324,10 +327,14 @@ const Header: React.FC = () => {
               </span>
               <span className="admin-notifications__copy">
                 <strong>
-                  {item.className} · {item.periodName}
+                  {item.schoolName} · {item.province}
                 </strong>
-                <span>{item.teacherName} a validé les cotes</span>
+                <span>
+                  {item.className}
+                  {item.classCode ? ` (${item.classCode})` : ""} · {item.periodName}
+                </span>
                 <small>
+                  {item.teacherName} a validé les cotes ·{" "}
                   {new Intl.DateTimeFormat("fr-FR", {
                     dateStyle: "short",
                     timeStyle: "short",

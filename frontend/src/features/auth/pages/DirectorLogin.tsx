@@ -46,7 +46,7 @@ export default function DirectorLogin() {
     const identifier = schoolCode.trim().toUpperCase();
     let cancelled = false;
     setResolvedSchool(null);
-    if (!/^PG[1-9A-Z]{9}$/.test(identifier)) {
+    if (!/^[A-Z0-9-]{3,30}$/.test(identifier)) {
       setIsResolvingSchool(false);
       return;
     }
@@ -103,6 +103,11 @@ export default function DirectorLogin() {
 
     if (!schoolCode.trim() || !password) {
       setErrorMsg("Veuillez renseigner tous les champs obligatoires.");
+      return;
+    }
+
+    if (password.length > 72) {
+      setErrorMsg("Le mot de passe ne doit pas dépasser 72 caractères.");
       return;
     }
 
@@ -213,7 +218,7 @@ export default function DirectorLogin() {
                     onChange={(event) =>
                       setSchoolCode(event.target.value.toUpperCase())
                     }
-                    maxLength={11}
+                    maxLength={30}
                     placeholder="Ex. PG2123D4ABN"
                     autoComplete="username"
                   />

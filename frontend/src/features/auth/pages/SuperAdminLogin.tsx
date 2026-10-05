@@ -53,6 +53,11 @@ export default function SuperAdminLogin() {
     event.preventDefault();
     if (!email || !password) return;
 
+    if (password.length > 72) {
+      setErrorMsg("Le mot de passe ne doit pas dépasser 72 caractères.");
+      return;
+    }
+
     setIsLoading(true);
     setIsPageTransitioning(true);
     setErrorMsg(null);
@@ -76,7 +81,7 @@ export default function SuperAdminLogin() {
           : `${ROUTES.DASHBOARD}?workspace=grades`,
       );
 
-    } catch (error) {
+    } catch {
       setIsPageTransitioning(false);
       setErrorMsg(
         "E-mail ou mot de passe incorrect. Vérifiez le compte superadmin.",

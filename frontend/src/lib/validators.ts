@@ -49,5 +49,9 @@ export const getStudentLoginValidationError = ({
     return "Saisissez votre mot de passe.";
   }
 
+  if (password.length > 72) {
+    return "Le mot de passe ne doit pas dépasser 72 caractères.";
+  }
+
   return null;
 };
