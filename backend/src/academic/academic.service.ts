@@ -324,8 +324,6 @@ export class AcademicService {
       },
     });
 
-    if (titulars.length === 0) return [];
-
     const classYearToTitularId = new Map(
       titulars.map((titular) => [
         `${titular.id_classe.toString()}:${titular.id_annee_scolaire.toString()}`,
@@ -347,7 +345,23 @@ export class AcademicService {
       },
     });
 
-    if (approvedSubmissions.length === 0) return [];
+    const integratedChecks = await this.prisma.orderedStudentCheck.findMany({
+      where: {
+        enrollmentId: { in: enrollments.map((item) => item.id_inscription) },
+        periodId: { in: periodIds },
+        isInOrder: true,
+        isSuperAdminApproved: true,
+        submittedToSuperAdminAt: { not: null },
+      },
+      select: { enrollmentId: true, periodId: true },
+    });
+    const integratedPeriodsByEnrollment = new Map<string, Set<string>>();
+    integratedChecks.forEach((check) => {
+      const key = check.enrollmentId.toString();
+      const periods = integratedPeriodsByEnrollment.get(key) ?? new Set<string>();
+      periods.add(check.periodId.toString());
+      integratedPeriodsByEnrollment.set(key, periods);
+    });
 
     const approvedPeriodsByTitular = new Map<string, Set<string>>();
     approvedSubmissions.forEach((submission) => {
@@ -370,12 +384,13 @@ export class AcademicService {
       const titularId = classYearToTitularId.get(
         `${enrollment.id_classe.toString()}:${enrollment.id_annee_scolaire.toString()}`,
       );
-      if (!titularId) return [];
-
-      const approvedPeriodIds = approvedPeriodsByTitular.get(
-        titularId.toString(),
+      const approvedPeriodIds = titularId
+        ? approvedPeriodsByTitular.get(titularId.toString())
+        : undefined;
+      const integratedPeriodIds = integratedPeriodsByEnrollment.get(
+        enrollment.id_inscription.toString(),
       );
-      if (!approvedPeriodIds || approvedPeriodIds.size === 0) return [];
+      if (!approvedPeriodIds?.size && !integratedPeriodIds?.size) return [];
 
       const gradedPeriodIds = new Set(
         enrollment.cotes.map((grade) => grade.id_periode.toString()),
@@ -390,7 +405,10 @@ export class AcademicService {
       );
 
       const periods = enrollment.annees_scolaires.periodes
-        .filter((period) => approvedPeriodIds.has(period.id_periode.toString()))
+        .filter((period) =>
+          approvedPeriodIds?.has(period.id_periode.toString()) ||
+          integratedPeriodIds?.has(period.id_periode.toString()),
+        )
         .map((period) => ({
           id: period.id_periode.toString(),
           name: period.libelle,
@@ -2928,8 +2946,6 @@ export class AcademicService {
     if (!existing) {
       throw new NotFoundException("Demande d'éligibilité introuvable.");
     }
-
-    await this.setStudentResultVisibility(enrollmentId, periodId, isApproved);
 
     const updated = await this.prisma.orderedStudentCheck.update({
       where: {

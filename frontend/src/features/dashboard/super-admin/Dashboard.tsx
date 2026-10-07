@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import {
   Avatar,
   Button,
@@ -48,6 +49,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../../../lib/api";
 import educationPartnerAd from "../../../assets/education-partner-ad.png";
 import { useAuth } from "../../../hooks/useAuth";
+
+const getGradeActionError = (error: unknown, fallback: string) => {
+  const detail: unknown = axios.isAxiosError(error)
+    ? error.response?.data?.message
+    : undefined;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.every((item) => typeof item === "string")) {
+    return detail.join(" ");
+  }
+  return fallback;
+};
 
 type Workspace =
   | "Aperçu"
@@ -781,6 +793,7 @@ const SuperAdminDashboard = () => {
     const normalizedSearch = eligibilitySearch.trim().toLocaleLowerCase("fr");
 
     return eligibilitySubmissions.filter((record) => {
+      if (record.isSuperAdminApproved) return false;
       if (!normalizedSearch) return true;
       return [
         record.studentName,
@@ -852,13 +865,6 @@ const SuperAdminDashboard = () => {
     [eligibilitySubmissions],
   );
 
-  const approvedEligibilityCount = useMemo(
-    () =>
-      eligibilitySubmissions.filter((record) => record.isSuperAdminApproved)
-        .length,
-    [eligibilitySubmissions],
-  );
-
   const integrateEligibilityRecords = async (
     records: OrderedEligibilitySubmissionRecord[],
     label?: string,
@@ -910,44 +916,27 @@ const SuperAdminDashboard = () => {
         )
         .map((result) => result.value);
 
+      const failedResults = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      const failureReasons = Array.from(new Set(failedResults.map(({ reason }) => {
+        const detail: unknown = axios.isAxiosError(reason)
+          ? reason.response?.data?.message
+          : undefined;
+        return typeof detail === "string"
+          ? detail
+          : Array.isArray(detail) && detail.every((item) => typeof item === "string")
+            ? detail.join(" ")
+            : "Le serveur n’a pas pu traiter la demande. Réessayez.";
+      })));
+
       const failedRecords = results
         .map((result, index) => ({ result, record: pendingRecords[index] }))
         .filter(({ result }) => result.status === "rejected")
         .map(({ record }) => record);
 
       if (successfulRecords.length > 0) {
-        const approvedPeriodByEnrollment = new Map<string, Set<string>>();
-        successfulRecords.forEach((record) => {
-          if (!approvedPeriodByEnrollment.has(record.enrollmentId)) {
-            approvedPeriodByEnrollment.set(record.enrollmentId, new Set());
-          }
-          approvedPeriodByEnrollment.get(record.enrollmentId)?.add(record.periodId);
-        });
-
-        setGradeManagementRecords((current) =>
-          current.map((item) => {
-            if (!item.enrollmentId) return item;
-            const approvedPeriods = approvedPeriodByEnrollment.get(item.enrollmentId);
-            if (!approvedPeriods || approvedPeriods.size === 0) return item;
-
-            const periodStatuses = { ...item.periodStatuses };
-            let changed = false;
-
-            approvedPeriods.forEach((periodId) => {
-              if (!item.periods.some((period) => period.id === periodId)) return;
-              periodStatuses[periodId] = true;
-              changed = true;
-            });
-
-            if (!changed) return item;
-
-            return {
-              ...item,
-              periodStatuses,
-              isValidated: Object.values(periodStatuses).some(Boolean),
-            };
-          }),
-        );
+        await loadGradeStudents();
       }
 
       if (failedRecords.length > 0) {
@@ -964,7 +953,10 @@ const SuperAdminDashboard = () => {
           ),
         );
         message.warning(
-          `${successfulRecords.length} eleve(s) integre(s), ${failedRecords.length} echec(s).`,
+          {
+            content: `${successfulRecords.length} élève(s) intégré(s), ${failedRecords.length} intégration(s) refusée(s). ${failureReasons.join(" ")}`,
+            duration: 10,
+          },
         );
       } else {
         message.success(
@@ -1090,8 +1082,11 @@ const SuperAdminDashboard = () => {
       message.success(
         `${response.data.affectedCount} élève${response.data.affectedCount > 1 ? "s" : ""} mis à jour.`,
       );
-    } catch {
-      message.error("Impossible d’appliquer l’action groupée.");
+    } catch (error) {
+      message.error({
+        content: getGradeActionError(error, "Impossible d’appliquer l’action groupée."),
+        duration: 10,
+      });
     } finally {
       setBulkVisibilityScope(null);
     }
@@ -1341,7 +1336,7 @@ const SuperAdminDashboard = () => {
                   ? "Résultats rendus disponibles pour cet élève."
                   : "Accès aux résultats retiré pour cette période.",
               );
-            } catch {
+            } catch (error) {
               setGradeManagementRecords((current) =>
                 current.map((item) =>
                   item.key === record.key
@@ -1355,9 +1350,13 @@ const SuperAdminDashboard = () => {
                     : item,
                 ),
               );
-              message.error(
-                "Impossible de modifier la disponibilité des résultats.",
-              );
+              message.error({
+                content: getGradeActionError(
+                  error,
+                  "Impossible de modifier la disponibilité des résultats.",
+                ),
+                duration: 10,
+              });
             }
           }}
         />
@@ -1406,9 +1405,6 @@ const SuperAdminDashboard = () => {
           <Space direction="vertical" size={4}>
             <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--warning">
               {group.pendingCount} en attente
-            </Tag>
-            <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--active">
-              {group.approvedCount} integres
             </Tag>
             <Typography.Text type="secondary">
               Dernier envoi: {" "}
@@ -2409,19 +2405,13 @@ const SuperAdminDashboard = () => {
             Fermer
           </Button>,
         ]}
-        title="Eleves envoyes par les directions"
+        title="Élèves à intégrer"
         centered
         width={1080}
       >
         <Space wrap size={8} style={{ marginBottom: 14 }}>
           <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--warning">
             {pendingEligibilityCount} en attente de confirmation
-          </Tag>
-          <Tag className="super-admin-dashboard__tag super-admin-dashboard__tag--active">
-            {approvedEligibilityCount} deja confirmes
-          </Tag>
-          <Tag className="super-admin-dashboard__tag">
-            Total envoyes: {eligibilitySubmissions.length}
           </Tag>
         </Space>
         <Input.Search
@@ -2435,6 +2425,7 @@ const SuperAdminDashboard = () => {
           rowKey="key"
           columns={eligibilityGroupsColumns}
           dataSource={groupedEligibilitySubmissions}
+          locale={{ emptyText: "Aucun élève en attente d’intégration." }}
           loading={isLoadingEligibilitySubmissions}
           pagination={false}
           scroll={{ x: 1120, y: 420 }}
