@@ -304,7 +304,7 @@ const SuperAdminDashboard = () => {
       Array.from(
         new Map(
           gradeManagementRecords
-            .filter((record) => record.school === gradeSchoolFilter)
+            .filter((record) => !gradeSchoolFilter || record.school === gradeSchoolFilter)
             .flatMap((record) => record.periods)
             .map((period) => [period.id, period]),
         ).values(),
@@ -549,13 +549,6 @@ const SuperAdminDashboard = () => {
     }
   }, [workspace]);
 
-  useEffect(() => {
-    if (!gradeSchoolFilter && gradePeriodFilter) {
-      setGradePeriodFilter(undefined);
-      localStorage.removeItem("superadmin_grade_period");
-    }
-  }, [gradePeriodFilter, gradeSchoolFilter]);
-
   const filteredSuperAdmins = useMemo(() => {
     const query = superAdminSearch.trim().toLocaleLowerCase();
 
@@ -748,16 +741,14 @@ const SuperAdminDashboard = () => {
   );
 
   const availableGradeClasses = useMemo(() => {
-    if (!gradeSchoolFilter) return [];
-
     return Array.from(
       new Set(
         gradeManagementRecords
-          .filter((record) => record.school === gradeSchoolFilter)
+          .filter((record) => !gradeSchoolFilter || record.school === gradeSchoolFilter)
           .map((record) => record.className),
       ),
     ).sort();
-  }, [gradeSchoolFilter]);
+  }, [gradeManagementRecords, gradeSchoolFilter]);
 
   const filteredGradeManagementRecords = useMemo(() => {
     const normalizedSearch = gradeSearch.trim().toLocaleLowerCase();
@@ -776,8 +767,7 @@ const SuperAdminDashboard = () => {
         matchesSearch &&
         (!gradeSchoolFilter || record.school === gradeSchoolFilter) &&
         (!gradeClassFilter || record.className === gradeClassFilter) &&
-        (!gradeSchoolFilter ||
-          !gradePeriodFilter ||
+        (!gradePeriodFilter ||
           record.periods.some((period) => period.id === gradePeriodFilter))
       );
     });
@@ -1846,20 +1836,29 @@ const SuperAdminDashboard = () => {
               )
             }
             style={{ width: 285 }}
-            value={gradeSchoolFilter}
+            value={gradeSchoolFilter ?? ""}
             onChange={(value) => {
-              setGradeSchoolFilter(value);
+              setGradeSchoolFilter(value || undefined);
               setGradeClassFilter(undefined);
               setGradePeriodFilter(undefined);
               localStorage.removeItem("superadmin_grade_period");
               localStorage.removeItem("superadmin_grade_school");
             }}
-            options={schools.map((school) => ({
-              label: school.name,
-              value: school.name,
-              disabled: !school.isActive,
-            }))}
-            optionRender={renderSchoolOption}
+            options={[
+              { label: "Toutes les écoles", value: "" },
+              ...schools.map((school) => ({
+                label: school.name,
+                value: school.name,
+                disabled: !school.isActive,
+              })),
+            ]}
+            optionRender={(option) =>
+              option.value === "" ? (
+                <span><BankOutlined /> Toutes les écoles</span>
+              ) : (
+                renderSchoolOption(option)
+              )
+            }
           />
           <Select
             className="super-admin-dashboard__grade-filter"
@@ -1885,11 +1884,10 @@ const SuperAdminDashboard = () => {
             classNames={{
               popup: { root: "super-admin-dashboard__grade-filter-popup" },
             }}
-            placeholder={gradeSchoolFilter ? "Période" : "Choisissez une école"}
+            placeholder="Période"
             allowClear
             prefix={<CalendarOutlined />}
             style={{ width: 210 }}
-            disabled={!gradeSchoolFilter}
             value={gradePeriodFilter}
             onChange={(value) => {
               setGradePeriodFilter(value);
